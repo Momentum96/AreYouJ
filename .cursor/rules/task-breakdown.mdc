@@ -34,6 +34,8 @@ Each Task must be a JSON object containing the following fields:
   "testStrategy": "The methods and strategy for testing and verifying the completion of the task.",
   "subtasks": [
     // For complex tasks, an array of subtask objects goes here.
-  ]
+  ],
+  "createdAt": "The timestamp when the task was created (ISO 8601 format).",
+  "updatedAt": "The timestamp of the last modification. Set to the creation time initially (ISO 8601 format)."
 
 }

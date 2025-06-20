@@ -11,8 +11,8 @@
       "details": "### Main Tasks\n- Initialize Git repository\n- Create basic folder structure (src, public, components)\n- Install necessary dependencies (React, TypeScript, Vite)\n- Configure ESLint and Prettier",
       "testStrategy": "1. Verify that `npm install` runs without errors.\n2. Check if `npm run dev` starts the development server.\n3. Ensure the basic folder structure is in place.",
       "subtasks": [],
-      "createdAt": "2023-10-26T10:00:00Z",
-      "updatedAt": "2023-10-26T12:30:00Z"
+      "createdAt": "2025-06-20T22:27:00Z",
+      "updatedAt": "2025-06-20T22:27:00Z"
     },
     {
       "id": "2",
@@ -36,8 +36,8 @@
           "details": "Set up Shadcn/UI using the CLI, which includes initializing the project and configuring the component library.",
           "testStrategy": "Run `npx shadcn-ui@latest init` and confirm that `components.json` is created and configured correctly.",
           "subtasks": [],
-          "createdAt": "2023-10-27T11:00:00Z",
-          "updatedAt": "2023-10-27T11:30:00Z"
+          "createdAt": "2025-06-20T22:27:00Z",
+          "updatedAt": "2025-06-20T22:27:00Z"
         },
         {
           "id": "2.2",
@@ -50,8 +50,8 @@
           "details": "Use the Shadcn/UI CLI to add core components like `Button`, `Card`, `Dialog`, and `Table` to the project.",
           "testStrategy": "Verify that the component files are created in the `src/components/ui` directory and that they can be imported and rendered in the application.",
           "subtasks": [],
-          "createdAt": "2023-10-27T12:00:00Z",
-          "updatedAt": "2023-10-27T14:00:00Z"
+          "createdAt": "2025-06-20T22:27:00Z",
+          "updatedAt": "2025-06-20T22:27:00Z"
         },
         {
           "id": "2.3",
@@ -64,12 +64,12 @@
           "details": "Integrate the `Dialog` component to be used for displaying task details in a modal view.",
           "testStrategy": "Trigger the dialog from a UI element and ensure it opens with the correct content and can be closed properly.",
           "subtasks": [],
-          "createdAt": "2023-10-27T14:30:00Z",
-          "updatedAt": "2023-10-27T14:30:00Z"
+          "createdAt": "2025-06-20T22:27:00Z",
+          "updatedAt": "2025-06-20T22:27:00Z"
         }
       ],
-      "createdAt": "2023-10-27T10:00:00Z",
-      "updatedAt": "2023-10-28T15:00:00Z"
+      "createdAt": "2025-06-20T22:27:00Z",
+      "updatedAt": "2025-06-20T22:27:00Z"
     },
     {
       "id": "3",
@@ -82,8 +82,8 @@
       "details": "### API Calls\n- Use `fetch` or `axios` to get data from `/api/tasks`.\n- Implement state management for the fetched data (e.g., using React Query or Zustand).\n- Handle loading and error states.",
       "testStrategy": "1. Mock the API endpoint to return sample data.\n2. Verify that the data is correctly displayed in the UI.\n3. Test the error handling by simulating a failed API call.",
       "subtasks": [],
-      "createdAt": "2023-10-29T09:00:00Z",
-      "updatedAt": "2023-10-29T09:00:00Z"
+      "createdAt": "2025-06-20T22:27:00Z",
+      "updatedAt": "2025-06-20T22:27:00Z"
     }
   ]
 }

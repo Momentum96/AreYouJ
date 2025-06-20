@@ -1,26 +1,24 @@
-export interface SubTask {
+export interface BaseTask {
   id: string;
   title: string;
   description: string;
   status: 'pending' | 'partial' | 'done';
-  notes?: string;
+  notes: string;
   dependencies: string[];
   priority: 'low' | 'medium' | 'high';
-  details: string;
-  testStrategy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface Task {
-  id: string;
-  title: string;
-  description: string;
-  status: 'pending' | 'partial' | 'done';
-  notes?: string;
-  dependencies: string[];
-  priority: 'low' | 'medium' | 'high';
+export interface Task extends BaseTask {
   details: string;
   testStrategy: string;
-  subtasks?: SubTask[];
+  subtasks: SubTask[];
+}
+
+export interface SubTask extends BaseTask {
+  details?: string;
+  testStrategy?: string;
 }
 
 export interface TaskData {

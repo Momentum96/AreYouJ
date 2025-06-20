@@ -56,6 +56,21 @@ const PriorityBadge = ({ priority }: { priority: 'low' | 'medium' | 'high' }) =>
   );
 };
 
+// ISO 날짜 문자열을 'YYYY-MM-DD HH:MM:SS' 형식으로 변환
+const formatISODate = (isoString: string) => {
+  const date = new Date(isoString);
+  const pad = (num: number) => num.toString().padStart(2, '0');
+
+  const year = date.getUTCFullYear();
+  const month = pad(date.getUTCMonth() + 1);
+  const day = pad(date.getUTCDate());
+  const hours = pad(date.getUTCHours());
+  const minutes = pad(date.getUTCMinutes());
+  const seconds = pad(date.getUTCSeconds());
+
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+};
+
 // 마크다운 형태의 텍스트를 간단하게 렌더링하는 컴포넌트
 const MarkdownRenderer = ({ content }: { content: string }) => {
   const renderContent = (text: string) => {
@@ -120,12 +135,20 @@ export const TaskDetailsModal = ({ task, isOpen, onClose }: TaskDetailsModalProp
             <StatusBadge status={task.status} />
             <PriorityBadge priority={task.priority} />
           </DialogTitle>
-          <DialogDescription className="text-left">
+          <DialogDescription className="text-left pt-1">
             {task.description}
           </DialogDescription>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2">
+            <span>
+              <strong>createdAt:</strong> {formatISODate(task.createdAt)}
+            </span>
+            <span>
+              <strong>updatedAt:</strong> {formatISODate(task.updatedAt)}
+            </span>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-6 pt-4">
           {/* 기본 정보 */}
           <div className="grid grid-cols-2 gap-4">
             <div>

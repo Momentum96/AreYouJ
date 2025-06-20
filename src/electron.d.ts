@@ -5,6 +5,8 @@ interface ElectronAPI {
   maximize: () => Promise<void>
   close: () => Promise<void>
   
+  getTasks: () => Promise<{ tasks: Task[] } | null>
+  
   // App info
   getVersion: () => Promise<string>
   

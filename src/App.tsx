@@ -29,24 +29,28 @@ function App() {
   useEffect(() => {
     const fetchTasks = async () => {
       try {
-        // Electron 환경과 웹 환경에서 다른 경로 사용
-        const tasksUrl = isElectron 
-          ? './tasks.json?t=' + new Date().getTime()  // Electron에서는 상대 경로
-          : '/tasks.json?t=' + new Date().getTime()   // 웹에서는 절대 경로
-        
-        const response = await fetch(tasksUrl)
-        if (!response.ok) {
-          throw new Error(`태스크 데이터를 불러오는데 실패했습니다. (${response.status}: ${response.statusText})`)
+        let data;
+        if (isElectron) {
+          data = await window.electronAPI.getTasks();
+          if (data === null) {
+            throw new Error('태스크 데이터를 불러오는데 실패했습니다. (Electron Main Process)');
+          }
+        } else {
+          const response = await fetch('/tasks.json?t=' + new Date().getTime());
+          if (!response.ok) {
+            throw new Error(`태스크 데이터를 불러오는데 실패했습니다. (${response.status}: ${response.statusText})`);
+          }
+          data = await response.json();
         }
-        const data = await response.json()
-        setTasks(data.tasks)
-        if (error) setError(null) // 성공 시 이전 에러 초기화
+        
+        setTasks(data.tasks);
+        if (error) setError(null); // 성공 시 이전 에러 초기화
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.'
-        console.error('Tasks fetch error:', errorMessage)
-        setError(errorMessage)
+        const errorMessage = err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.';
+        console.error('Tasks fetch error:', errorMessage);
+        setError(errorMessage);
       }
-    }
+    };
 
     // 즉시 실행
     fetchTasks()

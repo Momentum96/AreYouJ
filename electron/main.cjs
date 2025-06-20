@@ -40,6 +40,24 @@ function setupIPC() {
         return app.getVersion()
     })
 
+    // Read tasks.json
+    ipcMain.handle('get-tasks', async () => {
+        // Production: 'dist/tasks.json'
+        // Development: 'public/tasks.json'
+        const isDev = process.env.NODE_ENV === 'development'
+        const tasksPath = isDev
+            ? path.join(app.getAppPath(), 'public/tasks.json')
+            : path.join(app.getAppPath(), 'dist/tasks.json')
+
+        try {
+            const data = await fs.promises.readFile(tasksPath, 'utf-8')
+            return JSON.parse(data)
+        } catch (error) {
+            console.error('Failed to read tasks.json', error)
+            return null
+        }
+    })
+
     // Tray controls
     ipcMain.handle('show-in-tray', () => {
         if (mainWindow) {
@@ -138,7 +156,7 @@ function createTray() {
     // 기본 아이콘 사용 (빈 아이콘)
     tray = new Tray(nativeImage.createEmpty())
 
-    // 툴팁과 메뉴는 그대로
+    // 툴크과 메뉴는 그대로
     tray.setToolTip('Dashboard')
 
     // Create context menu

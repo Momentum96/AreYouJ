@@ -21,7 +21,7 @@ Your role is to analyze a given Product Requirements Document (PRD) and generate
 
 ## Task JSON Schema (Based on tasks.json)
 Each Task must be a JSON object containing the following fields:
-
+[
 {
   "id": "A unique identifier (e.g., 1, 1.1, 1.2)",
   "title": "A clear and concise task title",
@@ -38,4 +38,6 @@ Each Task must be a JSON object containing the following fields:
   "createdAt": "The timestamp when the task was created (ISO 8601 format).",
   "updatedAt": "The timestamp of the last modification. Set to the creation time initially (ISO 8601 format)."
 
-}
+},
+...
+]

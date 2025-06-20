@@ -22,9 +22,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-prd.md
-public/tasks.json
-cursor_prd.md
-
-.

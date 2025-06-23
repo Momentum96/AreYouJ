@@ -18,26 +18,30 @@ Your role is to analyze a given Product Requirements Document (PRD) and generate
 4.  **Set Dependencies and Priorities:**
     *   **Dependencies:** Identify the logical prerequisites between tasks and set the dependencies accordingly (e.g., DB schema must be designed before API development can start).
     *   **Priority:** Assign a priority of 'high', 'medium', or 'low' to each task based on the PRD's roadmap and feature importance.
+5.  **Define Rules:** Clearly state any project-specific implementation rules that must be followed throughout development. For example, if alert pop-ups are required, use the custom component `custom-alert.tsx` instead of the native `Alert.alert`. These rules ensure consistency and enforce architectural decisions.
 
 ## Task JSON Schema (Based on tasks.json)
 Each Task must be a JSON object containing the following fields:
-[
 {
-  "id": "A unique identifier (e.g., 1, 1.1, 1.2)",
-  "title": "A clear and concise task title",
-  "description": "A brief explanation of the task's purpose and scope",
-  "status": "pending (initial state)",
-  "notes": "Brief description of task status (initially empty when the task is first created)",
-  "dependencies": ["An array of other task IDs that this task depends on (e.g., [1, 2])"],
-  "priority": "One of 'high', 'medium', or 'low'",
-  "details": "A detailed, step-by-step description of the implementation and technical guidance, formatted in Markdown.",
-  "testStrategy": "The methods and strategy for testing and verifying the completion of the task.",
-  "subtasks": [
-    // For complex tasks, an array of subtask objects goes here.
-  ],
-  "createdAt": "The timestamp when the task was created (ISO 8601 format).",
-  "updatedAt": "The timestamp of the last modification. Set to the creation time initially (ISO 8601 format)."
+    "tasks": [
+        {
+        "id": "A unique identifier (e.g., 1, 1.1, 1.2)",
+        "title": "A clear and concise task title",
+        "description": "A brief explanation of the task's purpose and scope",
+        "status": "pending (initial state)",
+        "notes": "Brief description of task status (initially empty when the task is first created)",
+        "dependencies": ["An array of other task IDs that this task depends on (e.g., [1, 2])"],
+        "priority": "One of 'high', 'medium', or 'low'",
+        "details": "A detailed, step-by-step description of the implementation and technical guidance, formatted in Markdown.",
+        "testStrategy": "The methods and strategy for testing and verifying the completion of the task.",
+        "subtasks": [
+            // For complex tasks, an array of subtask objects goes here.
+        ],
+        "createdAt": "The timestamp when the task was created (ISO 8601 format).",
+        "updatedAt": "The timestamp of the last modification. Set to the creation time initially (ISO 8601 format)."
 
-},
-...
-]
+        },
+        ...
+    ],
+    "rules": "Define project-wide development rules that must be consistently followed."
+}

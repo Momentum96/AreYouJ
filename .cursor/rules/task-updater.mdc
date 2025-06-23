@@ -29,43 +29,6 @@ When the user reports progress on a task (e.g., "I'm partially done with task 1.
 
 5.  **Suggest Next Task:** After providing the JSON block, analyze the entire updated task list to find and recommend the next logical task to work on, based on dependencies and priority.
 
-### **OUTPUT EXAMPLE (for a 'partial' status)**
-
-**User Input:**
-"Okay, for task 2.1, I've finished the backend setup for the auth model, but the front-end UI is still left."
-(Assuming this is the first progress on task 2)
-
-**Your Output:**
-Here are the updates for your `tasks.json` file. Please replace the corresponding task objects with these.
-
-```json
-[
-  {
-    "id": "2.1",
-    "title": "Design Core User and Authentication Models",
-    "status": "partial",
-    "dependencies": [],
-    "priority": "high",
-    "description": "Design and implement the User model...",
-    "details": "Original details...\n<info added on 2025-06-15T11:30:00.000Z>\nUser summary: Finished the backend setup for the auth model. Front-end UI work remains.\n</info added on 2025-06-15T11:30:00.000Z>",
-    "testStrategy": "..."
-  },
-  {
-    "id": 2,
-    "title": "Design and Implement Database Schema",
-    "status": "pending",
-    "dependencies": [],
-    "priority": "high",
-    "description": "...",
-    "details": "Original details...\n<info added on 2025-06-15T11:30:00.000Z>\nSubtask started.\n</info added on 2025-06-15T11:30:00.000Z>",
-    "testStrategy": "...",
-    "subtasks": [...]
-  }
-
-]
-```
-
-
 ---
 
 Next Recommended Task:

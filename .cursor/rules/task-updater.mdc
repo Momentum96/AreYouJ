@@ -23,7 +23,7 @@ When the user reports progress on a task (e.g., "I'm partially done with task 1.
 
 3.  **Synchronize Parent Task Status (Hierarchy Logic):**
     *   **Completion Cascade:** If a subtask's completion results in **all** subtasks under its parent being `"done"`, you must also generate a JSON update block for the parent task. Set its `status` to `"done"` and add a note like "All subtasks completed." to its `details`.
-    *   **Progress Cascade:** Additionally, if a subtask's status changes to `in-progress` or `partial`, and its parent task's status is currently `pending`, you must also generate a JSON update block for the parent task. Set its `status` to `in-progress` and add a note like "Subtask started." to its `details`.
+    *   **Progress Cascade:** Additionally, if a subtask's status changes to `partial` and its parent task's status is currently `pending`, you must also generate a JSON update block for the parent task. Set its `status` to `partial` and add a note like "Subtask started." to its `details`.
 
 4.  **Provide the Output:** Present the generated JSON update block(s) to the user inside a markdown code block, instructing them to replace the old task object(s) with the new one(s).
 
@@ -53,7 +53,7 @@ Here are the updates for your `tasks.json` file. Please replace the correspondin
   {
     "id": 2,
     "title": "Design and Implement Database Schema",
-    "status": "in-progress",
+    "status": "pending",
     "dependencies": [],
     "priority": "high",
     "description": "...",

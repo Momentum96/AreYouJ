@@ -33,7 +33,7 @@ My output is one or more **copy-paste-ready JSON objects** reflecting the new st
      - `partial` → user states partial progress (“half-way”, “backend done”)  
    - **Append a progress log to `notes`** (not `details`) in this format:  
      ```
-     <info added on YYYY-MM-DDTHH:MM:SS±TZ>
+     <info added on YYYY-MM-DDTHH:MM:SS.000Z>
      User summary: …
      </info>
      ```
@@ -77,19 +77,19 @@ My output is one or more **copy-paste-ready JSON objects** reflecting the new st
 {
   "id": "2.1",
   "status": "done",
-  "notes": "<info added on 2025-07-02T15:42:00+09:00>\nUser summary: Implemented all API endpoints.\n</info>",
-  "updatedAt": "2025-07-02T15:42:00+09:00"
+  "notes": "<info added on 2025-07-02T15:42:00.000Z>\nUser summary: Implemented all API endpoints.\n</info>",
+  "updatedAt": "2025-07-02T15:42:00.000Z"
 }
 {
   "id": "2.2",
   "status": "partial",
-  "notes": "<info added on 2025-07-02T15:42:00+09:00>\nUser summary: Completed schema, UI pending.\n</info>",
-  "updatedAt": "2025-07-02T15:42:00+09:00"
+  "notes": "<info added on 2025-07-02T15:42:00.000Z>\nUser summary: Completed schema, UI pending.\n</info>",
+  "updatedAt": "2025-07-02T15:42:00.000Z"
 }
 {
   "id": "2",
   "status": "partial",
-  "notes": "<info added on 2025-07-02T15:42:00+09:00>\nSubtask started.\n</info>",
-  "updatedAt": "2025-07-02T15:42:00+09:00"
+  "notes": "<info added on 2025-07-02T15:42:00.000Z>\nSubtask started.\n</info>",
+  "updatedAt": "2025-07-02T15:42:00.000Z"
 }
 ```

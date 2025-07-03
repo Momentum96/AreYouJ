@@ -53,8 +53,8 @@ Your role is to analyze a given Product Requirements Document (PRD) and generate
       "details": "Markdown-formatted, step-by-step implementation guide.",
       "testStrategy": "Methods to verify correctness.",
       "subtasks": [ /* optional nested task objects */ ],
-      "createdAt": "2025-07-02T14:30:00+09:00", // MUST use current local time (ISO 8601)
-      "updatedAt": "2025-07-02T14:30:00+09:00"  // same initial value as createdAt
+      "createdAt": "2025-07-02T14:30:00.000Z", // MUST use current local time (ISO 8601)
+      "updatedAt": "2025-07-02T14:30:00.000Z"  // same initial value as createdAt
     }
   ],
 
@@ -93,12 +93,12 @@ Your role is to analyze a given Product Requirements Document (PRD) and generate
           "details": "- Choose UUID primary key...\n- Add index on email...",
           "testStrategy": "- Unit test unique email constraint",
           "subtasks": [],
-          "createdAt": "2025-07-02T14:30:00+09:00",
-          "updatedAt": "2025-07-02T14:30:00+09:00"
+          "createdAt": "2025-07-02T14:30:00.000Z",
+          "updatedAt": "2025-07-02T14:30:00.000Z"
         }
       ],
-      "createdAt": "2025-07-02T14:30:00+09:00",
-      "updatedAt": "2025-07-02T14:30:00+09:00"
+      "createdAt": "2025-07-02T14:30:00.000Z",
+      "updatedAt": "2025-07-02T14:30:00.000Z"
     }
   ],
   "rules": {

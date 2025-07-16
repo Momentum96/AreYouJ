@@ -201,7 +201,7 @@ npm run dist
 
 ## 📚 Reference
 
-- [프로젝트 소개 영상](https://youtu.be/ktr-4JjDsU0)
+- [프로젝트 영감](https://youtu.be/ktr-4JjDsU0)
 - [Claude Task Master](https://github.com/eyaltoledano/claude-task-master)
 - [Context7](https://github.com/upstash/context7)
 - [Shadcn/UI](https://ui.shadcn.com/)

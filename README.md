@@ -1,6 +1,6 @@
-# AI 프로젝트 대시보드 - React, Vite, Electron
+# AI 프로젝트 대시보드
 
-React, Vite, Electron으로 구축된 강력한 데스크톱 작업 관리 대시보드입니다. 시스템 트레이 통합, 메뉴 바 커스터마이징, 크로스 플랫폼 호환성을 제공합니다.
+React, TypeScript, Vite, Electron으로 구축된 AI 지원 작업 관리 데스크톱 애플리케이션입니다. 실시간 작업 추적, 진행률 모니터링, 크로스 플랫폼 호환성을 제공합니다.
 
 ## 프로젝트 소개
 
@@ -16,16 +16,19 @@ claude-task-master mcp와 같은 강력한 도구들은 이러한 문제를 해�
 
 해당 프롬프트 규칙은 Cursor Rules 뿐만 아니라 ChatGPT, Claude, Gemini 등 사용하고 있는 다양한 AI 도구에서 대화 시작 전 AI에게 제공하거나 프로젝트 단위로 대화를 관리할 수 있는 기능에서도 사용할 수 있습니다.
 
-## 빠른 시작
+## 🚀 빠른 시작
 
-### 개발 모드
+### 개발 환경 설정
 
 ```bash
-# 종속성 설치
+# 1. 종속성 설치
 npm install
 
-# Vite 개발서버 시작
+# 2. 웹 개발서버 시작
 npm run dev
+
+# 3. Electron 개발 모드 (웹 서버와 Electron 동시 실행)
+npm run electron-dev
 ```
 
 ### 프로덕션 빌드
@@ -34,19 +37,71 @@ npm run dev
 # 앱 빌드
 npm run build
 
-# 빌드된 앱 실행 (electron 모드)
+# Electron 앱 실행
 npm run electron
+
+# 배포용 패키지 생성
+npm run dist
 ```
 
-## 사용 가능한 스크립트
+## 📋 사용 가능한 스크립트
 
-| 스크립트           | 설명                           |
-| ------------------ | ------------------------------ |
-| `npm run dev`      | Vite 개발 서버만 시작          |
-| `npm run build`    | 프로덕션용 빌드                |
-| `npm run electron` | 빌드된 파일로 Electron 앱 실행 |
+| 스크립트               | 설명                                      |
+| ---------------------- | ----------------------------------------- |
+| `npm run dev`          | Vite 개발 서버 시작 (웹 브라우저용)       |
+| `npm run electron-dev` | 개발 모드에서 Electron 앱 실행            |
+| `npm run build`        | TypeScript 컴파일 및 프로덕션 빌드        |
+| `npm run electron`     | 빌드된 파일로 Electron 앱 실행            |
+| `npm run dist`         | 배포용 실행파일 생성 (macOS/Windows/Linux)|
+| `npm run lint`         | ESLint 코드 검사                          |
+| `npm run preview`      | 빌드된 파일 미리보기                      |
 
-## AI 어시스턴트 Cursor Rules 사용법
+## ✨ 주요 기능
+
+### 📊 대시보드 기능
+- **실시간 작업 모니터링**: tasks.json 파일을 5초마다 자동 새로고침
+- **진행률 시각화**: 애니메이션 카운터와 원형 진행률 표시
+- **상태별 작업 분류**: pending, partial, done 상태로 작업 관리
+- **하위 작업 지원**: 계층적 작업 구조와 의존성 관리
+
+### 🖥️ 플랫폼 지원
+- **크로스 플랫폼**: macOS, Windows, Linux 지원
+- **웹/데스크톱 듀얼 모드**: 브라우저와 Electron 앱 모두 지원
+- **키보드 단축키**: 최소화(Ctrl/Cmd+M), 전체화면(F11) 등
+
+### 🎨 UI/UX
+- **다크 테마**: 개발자 친화적인 다크 모드 기본 제공
+- **반응형 디자인**: Tailwind CSS 기반 현대적 인터페이스
+- **컴포넌트 시스템**: Shadcn/UI 기반 재사용 가능한 컴포넌트
+
+## 🛠️ 기술 스택
+
+- **Frontend**: React 19, TypeScript, Tailwind CSS
+- **Build Tool**: Vite 6.x
+- **Desktop**: Electron 36.x
+- **UI Components**: Shadcn/UI, Radix UI, Lucide React
+- **Data Export**: XLSX 지원
+
+## 📂 프로젝트 구조
+
+```
+ai-project-dashboard/
+├── src/
+│   ├── components/          # React 컴포넌트
+│   │   ├── ui/             # Shadcn/UI 컴포넌트
+│   │   ├── Dashboard.tsx   # 메인 대시보드
+│   │   ├── TaskTable.tsx   # 작업 테이블
+│   │   └── ...
+│   ├── hooks/              # 커스텀 훅
+│   ├── types/              # TypeScript 타입 정의
+│   └── lib/                # 유틸리티 함수
+├── electron/               # Electron 메인/프리로드 스크립트
+├── public/
+│   └── tasks.json         # 작업 데이터 파일
+└── ...
+```
+
+## 🤖 AI 어시스턴트 Cursor Rules 사용법
 
 이 프로젝트에는 개발을 도와주는 4가지 특별한 AI 규칙이 포함되어 있습니다:
 
@@ -95,8 +150,59 @@ npm run electron
 "작업 3번 완료했어. 메모에 'API 연동 완료'라고 적어줘."
 ```
 
-## Reference
+## 📋 tasks.json 파일 형식
 
-- https://youtu.be/ktr-4JjDsU0
-- https://github.com/eyaltoledano/claude-task-master
-- https://github.com/upstash/context7
+대시보드가 읽어오는 작업 데이터는 다음과 같은 JSON 구조를 따릅니다:
+
+```json
+{
+  "tasks": [
+    {
+      "id": "1",
+      "title": "작업 제목",
+      "description": "작업 설명",
+      "status": "pending|partial|done",
+      "notes": "작업 노트",
+      "dependencies": ["이전_작업_id"],
+      "priority": "high|medium|low",
+      "details": "상세 구현 내용",
+      "testStrategy": "테스트 전략",
+      "subtasks": [...],
+      "createdAt": "2025-06-20T22:27:00Z",
+      "updatedAt": "2025-06-20T22:27:00Z"
+    }
+  ]
+}
+```
+
+## 💡 사용 팁
+
+1. **tasks.json 편집**: `public/tasks.json` 파일을 수정하면 대시보드가 자동으로 업데이트됩니다
+2. **Electron vs 웹**: 개발 중에는 웹 브라우저에서, 배포할 때는 Electron 앱을 사용하세요
+3. **키보드 단축키**: Electron 앱에서 `Ctrl/Cmd+M`으로 최소화, `F11`로 전체화면 전환
+4. **내보내기**: 작업 데이터를 Excel 파일로 내보낼 수 있습니다
+
+## 🔧 개발자 가이드
+
+### 새 컴포넌트 추가
+```bash
+# Shadcn/UI 컴포넌트 추가
+npx shadcn@latest add [component-name]
+```
+
+### 빌드 및 배포
+```bash
+# 개발 빌드 확인
+npm run build && npm run electron
+
+# 배포용 패키지 생성
+npm run dist
+```
+
+## 📚 Reference
+
+- [프로젝트 소개 영상](https://youtu.be/ktr-4JjDsU0)
+- [Claude Task Master](https://github.com/eyaltoledano/claude-task-master)
+- [Context7](https://github.com/upstash/context7)
+- [Shadcn/UI](https://ui.shadcn.com/)
+- [Electron 공식 문서](https://www.electronjs.org/docs)

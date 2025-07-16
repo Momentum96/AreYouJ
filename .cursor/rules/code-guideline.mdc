@@ -229,18 +229,20 @@ return <DataTable data={data} />;
 ## 8. Code Generation Specifics
 
 ### When Generating Code:
-1. **Always include error handling** for network requests, file operations, etc.
-2. **Provide loading and error states** for async operations
-3. **Use TypeScript strictly** - no `any` types without justification
-4. **Include JSDoc comments** for complex functions
-5. **Consider edge cases** in the initial implementation
-6. **Make components accessible** by default
-7. **Use meaningful variable names** even in small scopes
-8. **Prefer composition over inheritance**
-9. **Write testable code** even if tests aren't written immediately
-10. **Follow the principle of least surprise** - code should behave as expected
+1. **Plan before coding** - Always use the todo_tool to break down tasks into step-by-step actions before starting implementation
+2. **Always include error handling** for network requests, file operations, etc.
+3. **Provide loading and error states** for async operations
+4. **Use TypeScript strictly** - no `any` types without justification
+5. **Include JSDoc comments** for complex functions
+6. **Consider edge cases** in the initial implementation
+7. **Make components accessible** by default
+8. **Use meaningful variable names** even in small scopes
+9. **Prefer composition over inheritance**
+10. **Write testable code** even if tests aren't written immediately
+11. **Follow the principle of least surprise** - code should behave as expected
 
 ### Quality Checklist for Every Code Block:
+- [ ] Task broken down into clear steps using todo_tool
 - [ ] Handles null/undefined inputs gracefully
 - [ ] Provides clear error messages
 - [ ] Uses descriptive variable names

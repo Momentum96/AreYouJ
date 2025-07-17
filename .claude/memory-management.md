@@ -1,0 +1,160 @@
+# AI Assistant Memory Management System
+
+## Core Memory Philosophy
+An intelligent memory system that continuously learns and remembers project context to provide continuity across conversations.
+
+## Memory File Management
+
+### 1. memorys.json Initialization
+```
+1. Immediately attempt read_file("memorys.json") when project directory is provided
+2. If file doesn't exist, create with write_file("memorys.json", JSON.stringify(initialStructure))
+3. Store all analysis content, work records, and learned patterns chronologically
+4. Instantly restore existing context in new conversations to ensure continuity
+```
+
+### 2. Memory Storage Criteria
+
+**Essential Information to Store:**
+- User explicit requests: "Remember this", "Do it this way next time"
+- Important decisions: "Decided to use B instead of A", library choices, etc.
+- Coding style preferences: Discovered patterns, user-preferred approaches
+- Project characteristics: Special configurations, constraints, architecture decisions
+- When recording time-related information, always make sure to consider the system’s local time zone so that the current time is accurately captured.
+
+**Auto-judge and Store:**
+- Patterns used when implementing new features
+- Files repeatedly modified and their reasons
+- Frequently occurring errors and solutions
+- Changes in inter-file dependency relationships
+- Project structure modifications
+
+**Real-time Storage Triggers:**
+- Upon completion of file creation/modification tasks
+- After important technical discussions
+- When user expresses satisfaction/dissatisfaction (for learning)
+- When introducing new libraries or patterns
+- Before conversation session ends (summary save)
+
+## Memory Structure
+
+### memorys.json Structure Example: (Approximate example; no restrictions except using JSON for structuring)
+```json
+{
+  "projectInfo": {
+    "name": "Project Name",
+    "techStack": ["Technology stack array"],
+    "architecture": "Architecture pattern",
+    "conventions": "Coding conventions",
+    "lastAnalyzed": "Last analysis time"
+  },
+  "fileIndex": {
+    "file/path": {
+      "dependencies": ["Dependent files"],
+      "usedBy": ["Files using this file"],
+      "lastModified": "Modification time",
+      "description": "File description"
+    }
+  },
+  "userPreferences": {
+    "codingStyle": ["User coding style preferences"],
+    "libraryPreferences": ["Preferred libraries"],
+    "workflowPatterns": ["Workflow patterns"],
+    "frequentRequests": ["Frequent requests"]
+  },
+  "workingContext": {
+    "currentTask": "Currently working feature",
+    "activeFiles": ["Files being worked on"],
+    "recentChanges": [
+      {
+        "timestamp": "Time",
+        "action": "Action performed",
+        "files": ["Related files"],
+        "description": "Work description"
+      }
+    ]
+  },
+  "conversationHistory": [
+    {
+      "date": "Date",
+      "topic": "Discussion topic",
+      "keyInsights": ["Important insights"],
+      "decisions": ["Decisions made"]
+    }
+  ],
+  "taskManagement": {
+    "activeTasks": [/* Current task list */],
+    "completedSessions": [
+      {
+        "sessionId": "Unique session ID",
+        "startTime": "Start time",
+        "endTime": "End time",
+        "tasks": [/* Tasks from this session */],
+        "summary": "Session summary"
+      }
+    ],
+    "taskHistory": [/* All historical tasks */]
+  }
+}
+```
+
+## Memory Update Methods
+
+### When updating information:
+```javascript
+1. read_file("memorys.json") // Check existing content
+2. Merge existing data with new information
+3. edit_file(path, edits, dryRun: false) // Apply update
+```
+
+### For major changes:
+```javascript
+4. write_file("memorys.json", updatedContent) // Complete replacement
+```
+
+## Memory-Driven Responses
+
+### User preference memory pattern:
+```
+User: "Always use TypeScript strict mode when creating components from now on"
+
+"Understood. I'll remember this preference."
+
+[memorys.json Update]
+- Add "Use TypeScript strict mode" to userPreferences.codingStyle
+- Set to auto-apply for future component creation
+```
+
+### Work record pattern:
+```
+[Memory Update]
+- User preference: "Prefers async/await pattern" recorded
+- Work history: "Login screen validation improvement" saved
+- File relationships: LoginScreen → useAuth dependency updated
+```
+
+## Error Handling
+
+### When memorys.json is corrupted:
+```
+1. Check backup (memorys.backup.json)
+2. Suggest regeneration with new structure
+3. Attempt maximum recovery of existing information
+```
+
+### When memory access fails:
+```
+1. Check file permissions
+2. Suggest alternative paths
+3. Use temporary memory structure
+```
+
+## Integration Guidelines
+
+- Automatically update related context during all file operations
+- Naturally reference memory in conversation flow
+- Intelligently store information without explicit user requests
+- Maintain independent memory management per project
+- Ensure continuity between sessions
+
+*Note: This structure is an example and should be dynamically adjusted to match the scope you can actually perform. You must clearly inform users about any aspects of this document that you cannot execute.*

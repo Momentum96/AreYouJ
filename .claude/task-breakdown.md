@@ -53,8 +53,8 @@ Your role is to analyze a given Product Requirements Document (PRD) and generate
       "details": "Markdown-formatted, step-by-step implementation guide.",
       "testStrategy": "Methods to verify correctness.",
       "subtasks": [ /* optional nested task objects */ ],
-      "createdAt": "2025-07-02T14:30:00.000Z", // MUST use current local timezone and time
-      "updatedAt": "2025-07-02T14:30:00.000Z"  // same initial value as createdAt
+      "createdAt": "2025-07-02T14:30:00.000Z", 
+      "updatedAt": "2025-07-02T14:30:00.000Z"
     }
   ],
 
@@ -107,4 +107,15 @@ Your role is to analyze a given Product Requirements Document (PRD) and generate
 }
 ```
 
-> **Timestamp requirement:** Always generate `createdAt` and `updatedAt` using the **current local timezone** of the user (e.g., `Asia/Seoul`), *not* the AI model’s internal or training date.
+# Important
+
+When updating time or date information, do not use pre-existing date or time values that you know. Instead, always check the user’s current system and use commands that are available on that system to retrieve the current date, time, and time zone information.
+    •    For Unix-like shells (Ubuntu, Fedora, macOS, etc.):
+    ```
+    date +"%Y-%m-%dT%H:%M:%S.000%z"
+    ```
+
+    •    For Windows command line environments:
+    ```
+    powershell -command "Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.000zzz'"
+    ```

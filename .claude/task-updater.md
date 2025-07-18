@@ -93,3 +93,16 @@ My output is one or more **copy-paste-ready JSON objects** reflecting the new st
   "updatedAt": "2025-07-02T15:42:00.000Z"
 }
 ```
+
+# Important
+
+When updating time or date information, do not use pre-existing date or time values that you know. Instead, always check the user’s current system and use commands that are available on that system to retrieve the current date, time, and time zone information.
+    •    For Unix-like shells (Ubuntu, Fedora, macOS, etc.):
+    ```
+    date +"%Y-%m-%dT%H:%M:%S.000%z"
+    ```
+
+    •    For Windows command line environments:
+    ```
+    powershell -command "Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.000zzz'"
+    ```

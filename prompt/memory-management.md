@@ -1,13 +1,11 @@
 # AI Assistant Memory Management System
 
 ## Core Memory Philosophy
-
 An intelligent memory system that continuously learns and remembers project context to provide continuity across conversations.
 
 ## Memory File Management
 
 ### 1. memorys.json Initialization
-
 ```
 1. Immediately attempt read_file("memorys.json") when project directory is provided
 2. If file doesn't exist, create with write_file("memorys.json", JSON.stringify(initialStructure))
@@ -18,14 +16,12 @@ An intelligent memory system that continuously learns and remembers project cont
 ### 2. Memory Storage Criteria
 
 **Essential Information to Store:**
-
 - User explicit requests: "Remember this", "Do it this way next time"
 - Important decisions: "Decided to use B instead of A", library choices, etc.
 - Coding style preferences: Discovered patterns, user-preferred approaches
 - Project characteristics: Special configurations, constraints, architecture decisions
 
 **Auto-judge and Store:**
-
 - Patterns used when implementing new features
 - Files repeatedly modified and their reasons
 - Frequently occurring errors and solutions
@@ -33,7 +29,6 @@ An intelligent memory system that continuously learns and remembers project cont
 - Project structure modifications
 
 **Real-time Storage Triggers:**
-
 - Upon completion of file creation/modification tasks
 - After important technical discussions
 - When user expresses satisfaction/dissatisfaction (for learning)
@@ -43,7 +38,6 @@ An intelligent memory system that continuously learns and remembers project cont
 ## Memory Structure
 
 ### memorys.json Structure Example: (Approximate example; no restrictions except using JSON for structuring)
-
 ```json
 {
   "projectInfo": {
@@ -88,23 +82,17 @@ An intelligent memory system that continuously learns and remembers project cont
     }
   ],
   "taskManagement": {
-    "activeTasks": [
-      /* Current task list */
-    ],
+    "activeTasks": [/* Current task list */],
     "completedSessions": [
       {
         "sessionId": "Unique session ID",
         "startTime": "Start time",
         "endTime": "End time",
-        "tasks": [
-          /* Tasks from this session */
-        ],
+        "tasks": [/* Tasks from this session */],
         "summary": "Session summary"
       }
     ],
-    "taskHistory": [
-      /* All historical tasks */
-    ]
+    "taskHistory": [/* All historical tasks */]
   }
 }
 ```
@@ -112,7 +100,6 @@ An intelligent memory system that continuously learns and remembers project cont
 ## Memory Update Methods
 
 ### When updating information:
-
 ```javascript
 1. read_file("memorys.json") // Check existing content
 2. Merge existing data with new information
@@ -120,7 +107,6 @@ An intelligent memory system that continuously learns and remembers project cont
 ```
 
 ### For major changes:
-
 ```javascript
 4. write_file("memorys.json", updatedContent) // Complete replacement
 ```
@@ -128,7 +114,6 @@ An intelligent memory system that continuously learns and remembers project cont
 ## Memory-Driven Responses
 
 ### User preference memory pattern:
-
 ```
 User: "Always use TypeScript strict mode when creating components from now on"
 
@@ -140,7 +125,6 @@ User: "Always use TypeScript strict mode when creating components from now on"
 ```
 
 ### Work record pattern:
-
 ```
 [Memory Update]
 - User preference: "Prefers async/await pattern" recorded
@@ -151,7 +135,6 @@ User: "Always use TypeScript strict mode when creating components from now on"
 ## Error Handling
 
 ### When memorys.json is corrupted:
-
 ```
 1. Check backup (memorys.backup.json)
 2. Suggest regeneration with new structure
@@ -159,7 +142,6 @@ User: "Always use TypeScript strict mode when creating components from now on"
 ```
 
 ### When memory access fails:
-
 ```
 1. Check file permissions
 2. Suggest alternative paths
@@ -177,13 +159,14 @@ User: "Always use TypeScript strict mode when creating components from now on"
 # Important
 
 When updating time or date information, do not use pre-existing date or time values that you know. Instead, always check the user’s current system and use commands that are available on that system to retrieve the current date, time, and time zone information.
-• For Unix-like shells (Ubuntu, Fedora, macOS, etc.):
-`    date +"%Y-%m-%dT%H:%M:%S.000%z"
-   `
+    •    For Unix-like shells (Ubuntu, Fedora, macOS, etc.):
+    ```
+    date +"%Y-%m-%dT%H:%M:%S.000%z"
+    ```
 
     •    For Windows command line environments:
     ```
     powershell -command "Get-Date -Format 'yyyy-MM-ddTHH:mm:ss.000zzz'"
     ```
 
-_Note: This structure is an example and should be dynamically adjusted to match the scope you can actually perform. You must clearly inform users about any aspects of this document that you cannot execute._
+*Note: This structure is an example and should be dynamically adjusted to match the scope you can actually perform. You must clearly inform users about any aspects of this document that you cannot execute.*

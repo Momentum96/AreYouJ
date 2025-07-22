@@ -25,9 +25,9 @@ const StatusBadge = ({ status }: { status: 'pending' | 'partial' | 'done' }) => 
   };
 
   const text = {
-    pending: '대기',
-    partial: '진행중',
-    done: '완료'
+    pending: 'Pending',
+    partial: 'In Progress',
+    done: 'Done'
   }
 
   return (
@@ -46,9 +46,9 @@ const PriorityBadge = ({ priority }: { priority: 'low' | 'medium' | 'high' }) =>
   };
   
   const text = {
-    low: '낮음',
-    medium: '보통',
-    high: '높음'
+    low: 'Low',
+    medium: 'Medium',
+    high: 'High'
   }
 
   return (
@@ -84,14 +84,14 @@ const SubTaskRow = ({ subtask, onShowDetails }: { subtask: SubTask; onShowDetail
         </div>
         <div className={gridCellClass}>
           <p className="text-xs text-muted-foreground break-words">
-            {subtask.notes || '없음'}
+            {subtask.notes || 'None'}
           </p>
         </div>
       </div>
     </ContextMenuTrigger>
     <ContextMenuContent>
       <ContextMenuItem onClick={() => onShowDetails(subtask)}>
-        상세보기
+        View Details
       </ContextMenuItem>
     </ContextMenuContent>
   </ContextMenu>
@@ -187,14 +187,14 @@ export const TaskTable = ({ tasks }: TaskTableProps) => {
                       </div>
                       <div className={gridCellClass}>
                         <p className="text-xs text-muted-foreground break-words">
-                          {task.notes || '없음'}
+                          {task.notes || 'None'}
                         </p>
                       </div>
                     </div>
                   </ContextMenuTrigger>
                   <ContextMenuContent>
                     <ContextMenuItem onClick={() => showTaskDetails(task)}>
-                      상세보기
+                      View Details
                     </ContextMenuItem>
                   </ContextMenuContent>
                 </ContextMenu>

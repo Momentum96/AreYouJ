@@ -29,4 +29,16 @@ export interface TaskStats {
   total: number;
   completed: number;
   progress: number;
-} 
+}
+
+export interface FilterOptions {
+  status: ('pending' | 'partial' | 'done')[];
+  priority: ('low' | 'medium' | 'high')[];
+  showMainTasksOnly: boolean;
+  showSubTasksOnly: boolean;
+}
+
+export interface SearchFilters {
+  searchTerm: string;
+  filters: FilterOptions;
+}

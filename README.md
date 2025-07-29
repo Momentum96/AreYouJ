@@ -27,26 +27,31 @@ npm run electron-dev
 ### Step 2: First AI Conversation
 
 **For Cursor users:**
+
 - Simply open this project in Cursor
 - Rules in the `.cursor/` folder are automatically applied
 - Try saying "Create a new project PRD" in Cursor's Chat
 
 **For other AI tool users:**
+
 - Copy markdown files from the `prompt/` folder to your AI
 - Example: Copy `prompt/prd.md` content to ChatGPT and start conversation
 
 ### Step 3: Check Task List
+
 - When AI generates or updates the `docs/tasks.json` file
 - You can view task lists and progress in real-time on the dashboard
 
 ## 💡 Problems This Tool Solves
 
 **Limitations of existing AI development:**
+
 - 🔄 Context loss when conversation sessions change
 - 📊 Difficulty tracking overall project progress
 - 💸 Additional costs for separate task management tools
 
 **This tool's solution:**
+
 - ✅ Consistent task management through AI rules
 - 📈 Real-time progress visualization with dashboard
 - 💰 Maximize use of AI tools you already subscribe to
@@ -58,22 +63,29 @@ npm run electron-dev
 ```
 
 ### 1️⃣ Idea Stage
+
 When you have new project or feature ideas
 
 ### 2️⃣ AI Conversation Stage
+
 **Role of .cursor/ rules:**
+
 - When you open this project in Cursor, markdown files in `.cursor/rules/` folder are automatically sent to AI
 - Each file defines how AI should help in specific situations:
-  - `prd.md`: Convert ideas into concrete product documents
-  - `task-breakdown.md`: Break down PRD into developable task lists
-  - `task-updater.md`: Reflect task progress in JSON
+  - `prd.mdc`: Convert ideas into concrete product documents
+  - `task-breakdown.mdc`: Break down PRD into developable task lists
+  - `task-updater.mdc`: Reflect task progress in JSON
+  - `memory-management.mdc`: Maintain project context across conversations
+  - `code-guideline.mdc`: Ensure consistent code quality standards
+  - `universal-obsidian-knowledge.mdc`: Create interconnected knowledge notes
 
 **Conversation examples:**
+
 ```
 User: "I have a new chat app idea. Create a PRD for it"
 AI: [prd.md rules applied] "What users are you targeting? What are the core features..."
 
-User: "Create a development plan based on this PRD"  
+User: "Create a development plan based on this PRD"
 AI: [task-breakdown.md rules applied] Generate tasks.json file
 
 User: "Task 1.2 is completed"
@@ -81,7 +93,9 @@ AI: [task-updater.md rules applied] Update tasks.json
 ```
 
 ### 3️⃣ tasks.json Generation
+
 AI generates/updates the `docs/tasks.json` file:
+
 ```json
 {
   "tasks": [
@@ -97,6 +111,7 @@ AI generates/updates the `docs/tasks.json` file:
 ```
 
 ### 4️⃣ Dashboard Management
+
 - 📊 **Real-time Statistics**: Total/completed/in-progress task counts
 - 🔍 **Smart Filtering**: Filter by status, priority
 - 📱 **Responsive Table**: Intuitive task list display
@@ -104,44 +119,73 @@ AI generates/updates the `docs/tasks.json` file:
 
 ## 🛠️ Supported AI Tools
 
-| AI Tool | Usage Method | Auto-Applied |
-|---------|-------------|--------------|
-| **Cursor** | Just open the project | ✅ Automatic |
-| **Claude Code** | Already configured | ✅ Automatic |
-| **Gemini CLI** | Already configured | ✅ Automatic |
-| **ChatGPT** | Copy files from `prompt/` folder | ❌ Manual |
-| **Claude Web** | Copy files from `prompt/` folder | ❌ Manual |
+| AI Tool         | Usage Method                     | Auto-Applied |
+| --------------- | -------------------------------- | ------------ |
+| **Cursor**      | Just open the project            | ✅ Automatic |
+| **Claude Code** | Already configured               | ✅ Automatic |
+| **Gemini CLI**  | Already configured               | ✅ Automatic |
+| **ChatGPT**     | Copy files from `prompt/` folder | ❌ Manual    |
+| **Claude Web**  | Copy files from `prompt/` folder | ❌ Manual    |
 
 ## 📋 Available AI Commands
 
 ### PRD Generation
+
 ```
 "I have a new project idea, create a PRD for it"
 "Systematize this idea and write it as a PRD document"
 ```
 
 ### Task List Generation
+
 ```
-"Create a development plan based on this PRD"  
+"Create a development plan based on this PRD"
 "Generate specific task lists from the PRD"
 ```
 
 ### Progress Management
+
 ```
 "Show me the project dashboard"
 "What's the next task to do?"
 "Task 1.2 completed. Add 'API integration complete' to notes"
 ```
 
+### Memory & Context Management
+
+```
+"Remember this decision: using PostgreSQL for user data"
+"What patterns have we established for error handling?"
+"Update the project memory with today's architectural changes"
+```
+
+### Knowledge Documentation
+
+```
+"Create an interconnected note about React hooks patterns"
+"Document this component structure in the knowledge vault"
+"Link this concept to existing architecture notes"
+```
+
+### Code Quality Assurance
+
+```
+"Review this component for code quality standards"
+"Check if this follows our established patterns"
+"Ensure this code meets security guidelines"
+```
+
 ## 🖥️ Run Options
 
 ### Web Version (Development)
+
 ```bash
 npm run dev
 # Check at http://localhost:5173
 ```
 
 ### Desktop App
+
 ```bash
 # Development mode
 npm run electron-dev
@@ -167,15 +211,17 @@ npm run dist
 ## 🎯 Usage Tips
 
 ### Effective AI Conversation
+
 1. **Step-by-step approach**: Follow PRD → Task breakdown → Progress management order
 2. **Specific requests**: Use "User login API implementation complete" rather than "Task 1.2 complete"
 3. **Regular updates**: Notify AI whenever tasks are completed
 
 ### Understanding Project Structure
+
 ```
 ai-project-dashboard/
 ├── .cursor/rules/          # Cursor AI rules (auto-applied)
-├── prompt/                 # Rules for other AI tools (manual copy)  
+├── prompt/                 # Rules for other AI tools (manual copy)
 ├── docs/
 │   ├── tasks.json         # Task data generated by AI
 │   └── PROJECT_ANALYSIS.md # Project analysis document
@@ -184,14 +230,16 @@ ai-project-dashboard/
 ```
 
 ### Direct tasks.json Editing
+
 You can directly modify `docs/tasks.json` if needed:
+
 ```json
 {
   "tasks": [
     {
       "id": "1",
       "title": "Task Title",
-      "description": "Detailed description", 
+      "description": "Detailed description",
       "status": "pending|partial|done",
       "priority": "high|medium|low",
       "subtasks": [...]
@@ -220,7 +268,3 @@ You can directly modify `docs/tasks.json` if needed:
 - [Detailed Project Analysis](./docs/PROJECT_ANALYSIS.md)
 - [Developer Guide](./.cursor/rules/code-guideline.md)
 - [Claude Task Master](https://github.com/eyaltoledano/claude-task-master) (Inspired project)
-
----
-
-> 💡 **Tip**: If you're using Claude Code or Gemini CLI, ask "Tell me the rules given to you" to check the pre-configured rules.

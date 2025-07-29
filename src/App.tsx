@@ -40,7 +40,7 @@ function App() {
             );
           }
         } else {
-          const response = await fetch("/tasks.json?t=" + new Date().getTime());
+          const response = await fetch("/docs/tasks.json?t=" + new Date().getTime());
           if (!response.ok) {
             throw new Error(
               `태스크 데이터를 불러오는데 실패했습니다. (${response.status}: ${response.statusText})`

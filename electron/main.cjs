@@ -42,12 +42,8 @@ function setupIPC() {
 
     // Read tasks.json
     ipcMain.handle('get-tasks', async () => {
-        // Production: 'dist/tasks.json'
-        // Development: 'public/tasks.json'
-        const isDev = process.env.NODE_ENV === 'development'
-        const tasksPath = isDev
-            ? path.join(app.getAppPath(), 'public/tasks.json')
-            : path.join(app.getAppPath(), 'dist/tasks.json')
+        // Both Development and Production: 'docs/tasks.json'
+        const tasksPath = path.join(app.getAppPath(), 'docs/tasks.json')
 
         try {
             const data = await fs.promises.readFile(tasksPath, 'utf-8')

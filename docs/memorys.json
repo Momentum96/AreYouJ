@@ -1,0 +1,267 @@
+{
+  "projectInfo": {
+    "name": "AI Project Dashboard",
+    "description": "작업 관리 대시보드 데스크톱 애플리케이션",
+    "location": "/Users/jgw/mac_work/ai-project-dashboard",
+    "techStack": {
+      "frontend": ["React 19", "TypeScript", "Tailwind CSS"],
+      "build": ["Vite"],
+      "desktop": ["Electron 36"],
+      "state": ["Zustand"],
+      "ui": ["React Icons", "Tailwind CSS"]
+    },
+    "architecture": {
+      "type": "Electron-React Desktop Application",
+      "structure": "src/components 기반 컴포넌트 구조",
+      "dataManagement": "Zustand를 활용한 상태 관리",
+      "styling": "Tailwind CSS 유틸리티 클래스"
+    },
+    "lastUpdated": "2025-07-29T20:13:00.000+0900"
+  },
+  "fileIndex": {
+    "coreFiles": [
+      {
+        "path": "/Users/jgw/mac_work/ai-project-dashboard/package.json",
+        "description": "프로젝트 의존성 및 스크립트 정의",
+        "importance": "high"
+      },
+      {
+        "path": "/Users/jgw/mac_work/ai-project-dashboard/src/App.tsx",
+        "description": "메인 애플리케이션 컴포넌트",
+        "importance": "high"
+      },
+      {
+        "path": "/Users/jgw/mac_work/ai-project-dashboard/src/types/task.ts",
+        "description": "Task 데이터 타입 정의",
+        "importance": "high"
+      },
+      {
+        "path": "/Users/jgw/mac_work/ai-project-dashboard/src/components/Dashboard.tsx",
+        "description": "메인 대시보드 컴포넌트",
+        "importance": "high"
+      },
+      {
+        "path": "/Users/jgw/mac_work/ai-project-dashboard/electron/main.cjs",
+        "description": "Electron 메인 프로세스",
+        "importance": "high"
+      },
+      {
+        "path": "/Users/jgw/mac_work/ai-project-dashboard/docs/tasks.json",
+        "description": "작업 데이터 파일 (프로젝트 핵심 데이터)",
+        "importance": "high"
+      }
+    ],
+    "componentStructure": {
+      "Dashboard.tsx": "메인 대시보드 - TaskFilter, TaskTable 포함",
+      "TaskFilter.tsx": "작업 필터링 컴포넌트",
+      "TaskTable.tsx": "작업 목록 테이블 컴포넌트",
+      "TaskForm.tsx": "작업 생성/편집 폼"
+    },
+    "relationships": {
+      "App.tsx": ["Dashboard.tsx"],
+      "Dashboard.tsx": ["TaskFilter.tsx", "TaskTable.tsx", "TaskForm.tsx"],
+      "task.ts": ["모든 컴포넌트에서 타입 참조"]
+    }
+  },
+  "userPreferences": {
+    "language": "Korean",
+    "communicationStyle": "친근하고 유머러스한 톤",
+    "codeQuality": {
+      "structure": "체계적인 구조화 선호",
+      "documentation": "문서화 중시",
+      "consistency": "일관성 있는 코드 스타일"
+    },
+    "workflowPatterns": [
+      "파일 분석 후 종합적인 문서 작성",
+      "README.md 대신 실제 코드 파일 분석 선호",
+      "마크다운 형태의 정리된 문서 선호",
+      "docs/ 경로를 통한 체계적인 문서 관리"
+    ],
+    "organizationStyle": {
+      "documentation": "docs/ 디렉토리 하위에 분석 문서와 메모리 파일을 함께 관리",
+      "fileStructure": "프로젝트 문서들의 체계적 정리를 중시",
+      "preference": "문서 관리와 정리에 대한 높은 관심",
+      "dataManagement": "핵심 데이터 파일도 docs/ 디렉토리에서 관리하여 일관성 확보"
+    },
+    "structuralPreferences": {
+      "fileOrganization": "논리적 일관성을 중시하는 구조적 사고",
+      "docsDirectory": "문서와 핵심 데이터 파일을 docs/ 디렉토리로 통합 관리",
+      "importantFiles": "tasks.json 같은 핵심 파일의 적절한 위치 배치 중시"
+    }
+  },
+  "workingContext": {
+    "currentTasks": [],
+    "activeFiles": [
+      "/Users/jgw/mac_work/ai-project-dashboard/docs/PROJECT_ANALYSIS.md",
+      "/Users/jgw/mac_work/ai-project-dashboard/docs/tasks.json"
+    ],
+    "recentChanges": [
+      {
+        "date": "2025-07-29T20:19:51.000+0900",
+        "action": "프로젝트 구조 개선 작업 완료",
+        "files": ["docs/tasks.json", "src/App.tsx", "electron/main.cjs"],
+        "description": "tasks.json을 public/에서 docs/로 이동하고 관련 코드 경로 수정. 문서 중심 구조로 일관성 확보"
+      },
+      {
+        "date": "2025-07-29T20:15:04.000+0900",
+        "action": "문서 구조 정리 완료",
+        "files": ["docs/PROJECT_ANALYSIS.md"],
+        "description": "PROJECT_ANALYSIS.md 파일을 루트에서 docs/ 디렉토리로 이동하여 문서 구조 체계화"
+      },
+      {
+        "date": "2025-07-29T20:13:00.000+0900",
+        "action": "프로젝트 전체 분석 완료",
+        "files": ["PROJECT_ANALYSIS.md"],
+        "description": "프로젝트 구조, 기술 스택, 컴포넌트 아키텍처 분석 후 종합 문서 생성"
+      }
+    ]
+  },
+  "conversationHistory": [
+    {
+      "date": "2025-07-29T20:19:51.000+0900",
+      "topic": "프로젝트 구조 개선",
+      "keyInsights": [
+        "사용자는 tasks.json을 '굉장히 중요한 파일'로 인식",
+        "docs/ 디렉토리 중심의 체계적인 문서 관리 선호",
+        "프로젝트 구조의 논리적 일관성을 중시",
+        "핵심 데이터 파일도 적절한 위치에 배치하는 것을 중요하게 여김"
+      ],
+      "decisions": [
+        "tasks.json을 public/에서 docs/로 이동",
+        "App.tsx의 fetch 경로를 '/docs/tasks.json'으로 수정",
+        "electron/main.cjs의 IPC 핸들러 로직 단순화",
+        "문서와 데이터 파일을 docs/ 디렉토리로 통합 관리"
+      ],
+      "userFeedback": [
+        "tasks.json이 내 프로젝트에서 굉장히 중요한 파일",
+        "너에게 준 규칙과 얼라인을 맞추려면 docs로 옮겨야 할 것 같고",
+        "프로젝트 구조의 논리적 일관성을 중시"
+      ]
+    },
+    {
+      "date": "2025-07-29T20:13:00.000+0900",
+      "topic": "프로젝트 분석 및 문서화",
+      "keyInsights": [
+        "사용자는 README.md보다 실제 코드 파일 분석을 선호",
+        "React 19 + TypeScript + Electron 36 기반 데스크톱 애플리케이션",
+        "작업 관리 기능이 핵심 (필터링, 테이블 표시, 폼 작성)",
+        "Zustand를 통한 상태 관리, Tailwind CSS 스타일링",
+        "체계적인 컴포넌트 구조와 타입 안정성 확보"
+      ],
+      "decisions": [
+        "프로젝트 루트에 PROJECT_ANALYSIS.md 생성",
+        "기술 스택, 아키텍처, 컴포넌트 구조, 데이터 플로우 포함",
+        "실제 코드 분석을 통한 정확한 정보 수집",
+        "문서를 docs/ 디렉토리로 이동하여 체계적 관리"
+      ]
+    }
+  ],
+  "taskManagement": {
+    "activeTasks": [],
+    "completedSessions": [
+      {
+        "date": "2025-07-29T20:19:51.000+0900",
+        "task": "프로젝트 구조 개선 작업",
+        "outcome": "성공적으로 완료",
+        "deliverables": [
+          "tasks.json을 public/에서 docs/로 이동",
+          "App.tsx에서 브라우저 환경 fetch 경로 수정 (/docs/tasks.json)",
+          "electron/main.cjs IPC 핸들러 로직 단순화 (docs/tasks.json 참조)",
+          "문서 중심 구조로 일관성 확보"
+        ],
+        "satisfaction": "high",
+        "notes": "사용자가 중요하게 여기는 tasks.json 파일을 적절한 위치로 이동하여 프로젝트 구조의 논리적 일관성 확보",
+        "technicalDetails": {
+          "modifiedFiles": ["docs/tasks.json", "src/App.tsx", "electron/main.cjs"],
+          "changes": [
+            "파일 이동: public/tasks.json → docs/tasks.json",
+            "브라우저 fetch 경로: '/tasks.json' → '/docs/tasks.json'",
+            "Electron IPC: 복잡한 경로 로직 → 단순한 'docs/tasks.json' 참조"
+          ]
+        }
+      },
+      {
+        "date": "2025-07-29T20:15:04.000+0900",
+        "task": "프로젝트 문서 구조 정리",
+        "outcome": "성공적으로 완료",
+        "deliverables": [
+          "PROJECT_ANALYSIS.md를 docs/ 디렉토리로 이동",
+          "문서 구조 체계화",
+          "메모리 업데이트"
+        ],
+        "satisfaction": "high",
+        "notes": "사용자의 문서 관리 선호도에 맞춰 docs/ 디렉토리 하위로 문서 정리"
+      },
+      {
+        "date": "2025-07-29T20:13:00.000+0900",
+        "task": "AI Project Dashboard 프로젝트 분석",
+        "outcome": "성공적으로 완료",
+        "deliverables": [
+          "PROJECT_ANALYSIS.md 생성",
+          "프로젝트 전체 구조 파악",
+          "기술 스택 및 아키텍처 분석"
+        ],
+        "satisfaction": "high",
+        "notes": "사용자가 요청한 방식대로 README.md 대신 실제 코드 파일들을 분석하여 정확한 정보 제공"
+      }
+    ],
+    "taskHistory": [
+      {
+        "type": "refactoring",
+        "description": "프로젝트 구조 개선",
+        "files": ["docs/tasks.json", "src/App.tsx", "electron/main.cjs"],
+        "result": "성공",
+        "date": "2025-07-29T20:19:51.000+0900",
+        "impact": "높음 - 핵심 데이터 파일 위치 변경 및 관련 코드 수정"
+      },
+      {
+        "type": "organization",
+        "description": "문서 구조 정리",
+        "files": ["docs/PROJECT_ANALYSIS.md"],
+        "result": "성공",
+        "date": "2025-07-29T20:15:04.000+0900"
+      },
+      {
+        "type": "analysis",
+        "description": "프로젝트 파일 구조 분석",
+        "files": ["package.json", "App.tsx", "task.ts", "Dashboard.tsx", "electron/main.cjs"],
+        "result": "성공"
+      },
+      {
+        "type": "documentation",
+        "description": "종합 분석 문서 작성",
+        "output": "PROJECT_ANALYSIS.md",
+        "result": "성공"
+      }
+    ]
+  },
+  "patterns": {
+    "codePatterns": [
+      "TypeScript 인터페이스를 통한 타입 안정성",
+      "React 함수형 컴포넌트 + hooks 패턴",
+      "Zustand store를 통한 전역 상태 관리",
+      "Tailwind CSS 유틸리티 클래스 스타일링"
+    ],
+    "projectPatterns": [
+      "src/components 디렉토리 기반 컴포넌트 분리",
+      "src/types 디렉토리로 타입 정의 분리",
+      "electron 디렉토리로 데스크톱 관련 코드 분리",
+      "docs/ 디렉토리를 통한 문서와 핵심 데이터 통합 관리"
+    ],
+    "userInteractionPatterns": [
+      "실제 코드 파일 분석을 통한 정확한 정보 파악",
+      "체계적이고 구조화된 문서 작성",
+      "기술적 세부사항과 전체적인 아키텍처 모두 포함",
+      "docs/ 디렉토리를 활용한 문서 정리 선호",
+      "핵심 파일의 중요성을 강조하며 적절한 위치 배치 요구",
+      "프로젝트 구조의 논리적 일관성을 중시하는 체계적 사고"
+    ]
+  },
+  "metadata": {
+    "version": "1.2.0",
+    "created": "2025-07-29T20:13:00.000+0900",
+    "lastModified": "2025-07-29T20:19:51.000+0900",
+    "totalSessions": 3,
+    "totalTasks": 3
+  }
+}

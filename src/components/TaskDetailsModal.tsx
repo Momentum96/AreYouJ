@@ -236,7 +236,7 @@ export const TaskDetailsModal = ({
           {/* Details 섹션 */}
           {"details" in task && task.details && (
             <div>
-              <h3 className="font-semibold mb-3 text-lg">상세 내용</h3>
+              <h3 className="font-semibold mb-3 text-lg">Details</h3>
               <div className="border rounded-lg p-4 bg-muted/20 overflow-hidden">
                 <MarkdownRenderer content={task.details} />
               </div>
@@ -246,7 +246,7 @@ export const TaskDetailsModal = ({
           {/* Test Strategy 섹션 */}
           {"testStrategy" in task && task.testStrategy && (
             <div>
-              <h3 className="font-semibold mb-3 text-lg">테스트 전략</h3>
+              <h3 className="font-semibold mb-3 text-lg">Test Strategy</h3>
               <div className="border rounded-lg p-4 bg-muted/20 overflow-hidden">
                 <MarkdownRenderer content={task.testStrategy} />
               </div>

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { Task, SubTask, SearchFilters, FilterOptions } from '../types/task';
 
 const defaultFilters: FilterOptions = {
-  status: ['pending', 'partial', 'done'],
+  status: ['pending', 'in-progress', 'done'],
   priority: ['low', 'medium', 'high'],
   showMainTasksOnly: false,
   showSubTasksOnly: false,
@@ -93,7 +93,7 @@ export const useTaskFilter = (tasks: Task[]) => {
     }));
   };
 
-  const toggleStatusFilter = (status: 'pending' | 'partial' | 'done') => {
+  const toggleStatusFilter = (status: 'pending' | 'in-progress' | 'done') => {
     setFilters(prev => ({
       ...prev,
       status: prev.status.includes(status)

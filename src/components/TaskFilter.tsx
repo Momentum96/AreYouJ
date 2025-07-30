@@ -14,7 +14,7 @@ interface TaskFilterProps {
   searchTerm: string;
   onSearchChange: (term: string) => void;
   filters: FilterOptions;
-  onToggleStatusFilter: (status: "pending" | "partial" | "done") => void;
+  onToggleStatusFilter: (status: "pending" | "in-progress" | "done") => void;
   onTogglePriorityFilter: (priority: "low" | "medium" | "high") => void;
   onUpdateFilter: (key: keyof FilterOptions, value: any) => void;
   onResetFilters: () => void;
@@ -44,7 +44,7 @@ export const TaskFilter = ({
       color: "bg-gray-500/20 text-gray-300 border-gray-500/30",
     },
     {
-      value: "partial" as const,
+      value: "in-progress" as const,
       label: "In Progress",
       color: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
     },

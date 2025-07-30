@@ -18,17 +18,17 @@ interface TaskDetailsModalProps {
 const StatusBadge = ({
   status,
 }: {
-  status: "pending" | "partial" | "done";
+  status: "pending" | "in-progress" | "done";
 }) => {
   const colors = {
     pending: "bg-gray-500/20 text-gray-300 border-gray-500/30",
-    partial: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+    "in-progress": "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
     done: "bg-green-500/20 text-green-300 border-green-500/30",
   };
 
   const text = {
     pending: "대기",
-    partial: "진행중",
+    "in-progress": "진행중",
     done: "완료",
   };
 

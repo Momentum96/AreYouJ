@@ -17,16 +17,16 @@ interface TaskTableProps {
 }
 
 // 상태를 표시하는 뱃지 컴포넌트
-const StatusBadge = ({ status }: { status: 'pending' | 'partial' | 'done' }) => {
+const StatusBadge = ({ status }: { status: 'pending' | 'in-progress' | 'done' }) => {
   const colors = {
     pending: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
-    partial: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+    'in-progress': 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
     done: 'bg-green-500/20 text-green-300 border-green-500/30',
   };
 
   const text = {
     pending: 'Pending',
-    partial: 'In Progress',
+    'in-progress': 'In Progress',
     done: 'Done'
   }
 

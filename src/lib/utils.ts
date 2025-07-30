@@ -11,7 +11,7 @@ interface ExcelRow {
   ID: string;
   Type: "Main Task" | "Subtask";
   Title: string;
-  Status: "pending" | "partial" | "done";
+  Status: "pending" | "in-progress" | "done";
   Priority: "low" | "medium" | "high";
   Dependencies: string;
   Notes: string;

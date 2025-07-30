@@ -2,7 +2,7 @@ export interface BaseTask {
   id: string;
   title: string;
   description: string;
-  status: 'pending' | 'partial' | 'done';
+  status: 'pending' | 'in-progress' | 'done';
   notes: string;
   dependencies: string[];
   priority: 'low' | 'medium' | 'high';
@@ -32,7 +32,7 @@ export interface TaskStats {
 }
 
 export interface FilterOptions {
-  status: ('pending' | 'partial' | 'done')[];
+  status: ('pending' | 'in-progress' | 'done')[];
   priority: ('low' | 'medium' | 'high')[];
   showMainTasksOnly: boolean;
   showSubTasksOnly: boolean;

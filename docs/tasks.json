@@ -18,7 +18,7 @@
       "id": "2",
       "title": "UI Component Library Setup",
       "description": "Integrate Shadcn/UI and configure basic components.",
-      "status": "partial",
+      "status": "in-progress",
       "notes": "Button and Card components are set up. Dialog needs more work.",
       "dependencies": ["1"],
       "priority": "high",

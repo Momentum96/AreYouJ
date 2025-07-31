@@ -33,6 +33,28 @@ Maintain the `tasks.json` file in the `docs` directory by:
   </status_definitions>
 
 <update_workflow>
+<subtask_prioritization>
+**Subtask-First Workflow**:
+
+1. **Check for Subtasks**: Always examine if the current task has subtasks before processing
+2. **Sequential Processing**: If subtasks exist, process them in ID order (1.1 → 1.2 → 1.3)
+3. **Individual Updates**: Update each subtask's status and details separately
+4. **Parent Cascade**: Only update parent task after ALL subtasks are completed
+
+**Processing Rules**:
+
+- If task has subtasks AND any subtask is not 'done' → work on next pending subtask
+- If all subtasks are 'done' → mark parent task as 'done'
+- Never skip subtasks to work on parent directly
+- Each subtask completion must include comprehensive details documentation
+
+**Priority Order**:
+
+1. Complete pending subtasks in ID order
+2. Only then move to new parent tasks
+3. Follow dependency chains within subtask sequences
+   </subtask_prioritization>
+
 <parsing_stage>
 **Identify Progress Indicators**:
 
@@ -64,7 +86,27 @@ Progress details: [additional context if needed]
 <details_documentation>
 **Critical Requirement: Details Field Updates**
 
-When updating tasks to `done` status, you MUST also update the `details` field with comprehensive implementation information. The details field uses **Markdown format** and will be rendered in the dashboard for human review.
+When updating tasks to `done` status, you MUST also update the `details` field with comprehensive implementation information. This applies to BOTH parent tasks AND subtasks. The details field uses **Markdown format** and will be rendered in the dashboard for human review.
+
+**Subtask Details Requirements**:
+
+Subtasks MUST have comprehensive details when marked as 'done'. Use this template for subtasks:
+
+```markdown
+## Subtask Implementation Summary
+
+[Specific accomplishment for this subtask]
+
+## Technical Details
+
+- **Files Modified**: [specific files and lines]
+- **Key Changes**: [what was implemented/fixed]
+- **Dependencies Satisfied**: [what this enables]
+
+## Notes
+
+[Connection to parent task, next steps]
+```
 
 **Details Field Template (Markdown)**:
 
@@ -249,6 +291,20 @@ Password reset functionality planned for next sprint. Consider adding 2FA in fut
 
 **Next Task Recommendation**:
 
+For subtasks:
+
+```
+Next Recommended Task:
+ID: [subtask_id] (Subtask of Task [parent_id])
+Title: [subtask_title]
+Priority: [high/medium/low]
+Reason: Sequential subtask execution - [previous_subtask_id] completed, continuing task [parent_id] implementation
+Parent Context: [parent task title and progress]
+Dependencies: [list of completed dependencies that unblocked this]
+```
+
+For parent tasks:
+
 ```
 Next Recommended Task:
 ID: [task_id]
@@ -261,13 +317,22 @@ Dependencies: [list of completed dependencies that unblocked this]
 </output_format>
 
 <next_task_logic>
-**Selection Criteria** (in priority order):
+**Subtask-Aware Selection Criteria** (in priority order):
 
-1. **Dependencies Satisfied**: All prerequisite tasks must be `done`
-2. **Status Available**: Task must be `pending` (not already in progress)
-3. **Priority Level**: High → Medium → Low
-4. **Critical Path**: Tasks that unblock the most other work
-5. **ID Tiebreaker**: Lowest numeric ID when all other factors equal
+1. **Subtask Priority**: If any task has incomplete subtasks, recommend next subtask in ID sequence
+2. **Sequential Subtask Processing**: Within subtasks, follow strict ID order (1.1 → 1.2 → 1.3)
+3. **Dependencies Satisfied**: All prerequisite tasks must be `done`
+4. **Status Available**: Task must be `pending` (not already in progress)
+5. **Priority Level**: High → Medium → Low
+6. **Critical Path**: Tasks that unblock the most other work
+7. **ID Tiebreaker**: Lowest numeric ID when all other factors equal
+
+**Subtask Processing Rules**:
+
+- Always complete subtasks before moving to new parent tasks
+- Never skip subtasks to work on different parent task
+- If parent task has subtasks, recommend next pending subtask in sequence
+- Only recommend new parent task after all subtasks of current parent are done
 
 **Recommendation Reasoning**:
 

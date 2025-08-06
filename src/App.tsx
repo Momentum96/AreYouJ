@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 import { Dashboard } from "./components/Dashboard";
+import { Automation } from "./components/Automation";
 import type { Task } from "./types/task";
+
+type NavigationTab = 'dashboard' | 'automation';
 
 function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
 
 
   // 초기 데이터 로딩 및 주기적 업데이트
@@ -64,12 +68,58 @@ function App() {
     );
   }
 
+  const formatAppName = (name: string) => {
+    return name
+      .split("-")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+  };
+
   return (
     <div className="dark w-full h-screen bg-background text-foreground overflow-hidden">
-      <Dashboard tasks={tasks} appName={__APP_NAME__} />
+      {/* Navigation Bar */}
+      <div className="w-full border-b border-border bg-card">
+        <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex items-center space-x-8">
+            <h1 className="text-2xl font-bold text-primary">
+              {formatAppName(__APP_NAME__)}
+            </h1>
+            <nav className="flex space-x-1">
+              <button
+                onClick={() => setActiveTab('dashboard')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === 'dashboard'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                📊 Dashboard
+              </button>
+              <button
+                onClick={() => setActiveTab('automation')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === 'automation'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                🤖 Automation
+              </button>
+            </nav>
+          </div>
+        </div>
+      </div>
 
+      {/* Content Area */}
+      <div className="w-full h-[calc(100vh-73px)] overflow-hidden">
+        {activeTab === 'dashboard' ? (
+          <Dashboard tasks={tasks} appName={__APP_NAME__} />
+        ) : (
+          <Automation />
+        )}
+      </div>
 
-      {/* 백그라운드 업데이트 중 에러 발생 시, 우측 하단에 조용히 표시 */}
+      {/* Error Toast */}
       {error && (
         <div className="absolute bottom-4 right-4 bg-red-500 text-white p-2 rounded-md text-sm shadow-lg">
           {error}

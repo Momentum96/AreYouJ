@@ -4,7 +4,8 @@ import './index.css'
 import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
+  // Temporarily disable StrictMode to fix WebSocket double connection issue
+  // <StrictMode>
     <App />
-  </StrictMode>,
+  // </StrictMode>,
 )

@@ -8,7 +8,6 @@ const packageJson = JSON.parse(readFileSync(path.resolve(__dirname, 'package.jso
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: './', // Use relative paths for Electron compatibility
   plugins: [react()],
   resolve: {
     alias: {

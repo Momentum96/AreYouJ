@@ -1,0 +1,11 @@
+{
+  "watch": ["server/"],
+  "ext": "js,json",
+  "ignore": [
+    "server/data/*",
+    "server/logs/*",
+    "node_modules/*"
+  ],
+  "delay": 1000,
+  "exec": "node server/index.js"
+}

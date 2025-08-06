@@ -1,6 +1,7 @@
 // WebSocket connection management
 import { WebSocket } from 'ws';
 import { getClaudeSession } from '../claude/session-manager.js';
+import { getCurrentClaudeOutput } from '../routes/api.js';
 
 let connectedClients = new Set();
 
@@ -14,12 +15,16 @@ export function setupWebSocket(wss) {
     console.log(`🔌 WebSocket client connected from ${req.socket.remoteAddress}`);
     connectedClients.add(ws);
     
-    // Send welcome message with current session status
+    // Get current Claude output from API routes module
+    const currentClaudeOutput = getCurrentClaudeOutput();
+    
+    // Send welcome message with current session status AND current Claude output
     ws.send(JSON.stringify({
       type: 'connection',
       data: { 
         status: 'connected',
-        claudeSession: claudeSession.getStatus()
+        claudeSession: claudeSession.getStatus(),
+        initialOutput: currentClaudeOutput // Claude-Autopilot style
       },
       timestamp: new Date().toISOString()
     }));
@@ -84,13 +89,7 @@ function setupClaudeSessionEvents(claudeSession) {
     });
   });
 
-  // Real-time terminal output (Claude-Autopilot style)
-  claudeSession.on('terminal-output', (outputEvent) => {
-    broadcastToClients({ 
-      type: 'terminal-output', 
-      data: outputEvent 
-    });
-  });
+  // Removed terminal-output event - Claude-Autopilot style uses direct claude-output
 
   // Message processing events
   claudeSession.on('message-started', (messageItem) => {

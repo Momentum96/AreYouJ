@@ -1,11 +1,12 @@
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
 import { broadcastToClients } from '../websocket/index.js';
 import { getClaudeSession } from '../claude/session-manager.js';
 
 const router = express.Router();
 
-// Simple in-memory storage (나중에 실제 구현으로 교체)
-let messageQueue = [];
+// Processing status (session manager handles queue now)
 let processingStatus = {
   isProcessing: false,
   currentMessage: null,
@@ -18,27 +19,26 @@ let claudeOutputBuffer = '';
 let claudeCurrentScreen = '';
 let lastClaudeOutputTime = 0;
 
+// Export function to get current Claude output
+export function getCurrentClaudeOutput() {
+  return {
+    currentScreen: claudeCurrentScreen,
+    bufferLength: claudeOutputBuffer.length,
+    lastOutputTime: lastClaudeOutputTime,
+    hasOutput: claudeCurrentScreen.length > 0
+  };
+}
+
 // Get Claude session instance
 const claudeSession = getClaudeSession();
 
 // Set up Claude session event handlers
-claudeSession.on('session-started', () => {
-  console.log('🎉 Claude session started successfully');
-  broadcastToClients({
-    type: 'claude-session',
-    data: { status: 'started', ready: true }
-  });
-});
+// Removed duplicate session-started handler - WebSocket module handles this
 
 claudeSession.on('session-ended', () => {
   console.log('❌ Claude session ended');
   processingStatus.isProcessing = false;
   processingStatus.currentMessage = null;
-  
-  broadcastToClients({
-    type: 'claude-session', 
-    data: { status: 'ended', ready: false }
-  });
   
   broadcastToClients({
     type: 'processing-stopped',
@@ -49,93 +49,41 @@ claudeSession.on('session-ended', () => {
 claudeSession.on('message-started', (message) => {
   console.log(`📤 Claude processing message: ${message.id}`);
   
-  // Update message status in queue
-  const queueMessage = messageQueue.find(m => m.id === message.id);
-  if (queueMessage) {
-    queueMessage.status = 'processing';
-    queueMessage.processingStartedAt = message.processingStartedAt;
-  }
-  
   processingStatus.currentMessage = message.id;
+  processingStatus.isProcessing = true;
+  
+  // Get current queue from session manager
+  const messageQueue = claudeSession.getMessageQueue();
   
   broadcastToClients({
     type: 'queue-update',
     data: { messages: messageQueue, total: messageQueue.length }
-  });
-  
-  broadcastToClients({
-    type: 'message-processing',
-    data: { messageId: message.id, status: 'started' }
   });
 });
 
 claudeSession.on('message-completed', (result) => {
   console.log(`✅ Claude completed message: ${result.id} (${result.status})`);
   
-  // Update message in queue
-  const queueMessage = messageQueue.find(m => m.id === result.id);
-  if (queueMessage) {
-    queueMessage.status = result.status;
-    queueMessage.completedAt = result.completedAt;
-    queueMessage.output = result.output || null;
-    queueMessage.error = result.error || null;
-  }
-  
   processingStatus.currentMessage = null;
-  processingStatus.isProcessing = false; // Mark as not processing
+  processingStatus.isProcessing = false;
   
   if (result.status === 'completed') {
     processingStatus.completedMessages++;
   }
+  
+  // Get current queue from session manager
+  const messageQueue = claudeSession.getMessageQueue();
   
   broadcastToClients({
     type: 'queue-update',
     data: { messages: messageQueue, total: messageQueue.length }
   });
   
-  broadcastToClients({
-    type: 'message-completed',
-    data: { 
-      messageId: result.id, 
-      status: result.status,
-      output: result.output,
-      error: result.error
-    }
-  });
-  
-  // Auto-process next message if available (Claude-Autopilot style)
-  const claudeStatus = claudeSession.getStatus();
+  // Check if all messages are processed
   const pendingMessages = messageQueue.filter(m => m.status === 'pending');
   const processingMessages = messageQueue.filter(m => m.status === 'processing');
   
-  if (claudeStatus.sessionReady && pendingMessages.length > 0 && processingMessages.length === 0) {
-    console.log('🔄 Auto-processing next message in queue...');
-    
-    const nextMessage = pendingMessages[0];
-    processingStatus.isProcessing = true;
-    processingStatus.currentMessage = nextMessage.id;
-    
-    // Process next message after a short delay
-    setTimeout(async () => {
-      try {
-        await claudeSession.addToQueue(nextMessage);
-        
-        broadcastToClients({
-          type: 'message-status',
-          data: {
-            messageId: nextMessage.id,
-            status: 'processing',
-            autoProcessed: true
-          }
-        });
-      } catch (error) {
-        console.error('❌ Failed to auto-process next message:', error);
-        processingStatus.isProcessing = false;
-        processingStatus.currentMessage = null;
-      }
-    }, 500); // Small delay between messages
-    
-  } else if (pendingMessages.length === 0 && processingMessages.length === 0) {
+  if (pendingMessages.length === 0 && processingMessages.length === 0) {
     console.log('🏁 All messages processed');
     broadcastToClients({
       type: 'processing-completed',
@@ -191,17 +139,12 @@ claudeSession.on('claude-output', (output) => {
   });
 });
 
-claudeSession.on('error', (error) => {
-  console.error('❌ Claude session error:', error.message);
-  broadcastToClients({
-    type: 'claude-error',
-    data: { error: error.message, timestamp: new Date().toISOString() }
-  });
-});
+// Removed duplicate error handler - WebSocket module handles this
 
 // Get system status  
 router.get('/status', (req, res) => {
   const claudeStatus = claudeSession.getStatus();
+  const messageQueue = claudeSession.getMessageQueue();
   
   res.json({
     status: claudeStatus.sessionReady ? 'ready' : 'not-ready',
@@ -209,16 +152,17 @@ router.get('/status', (req, res) => {
       total: messageQueue.length,
       pending: messageQueue.filter(m => m.status === 'pending').length,
       processing: messageQueue.filter(m => m.status === 'processing').length,
-      completed: messageQueue.filter(m => m.status === 'completed').length
+      completed: messageQueue.filter(m => m.status === 'completed').length,
+      error: messageQueue.filter(m => m.status === 'error').length
     },
     processing: processingStatus,
     claude: {
       sessionReady: claudeStatus.sessionReady,
       isStarting: claudeStatus.isStarting,
-      queueLength: claudeStatus.queueLength,
       currentlyProcessing: claudeStatus.currentlyProcessing,
       lastActivity: claudeStatus.lastActivity,
-      processAlive: claudeStatus.processAlive
+      processAlive: claudeStatus.processAlive,
+      screenBufferSize: claudeStatus.screenBufferSize
     },
     output: {
       currentScreen: claudeCurrentScreen,
@@ -230,6 +174,7 @@ router.get('/status', (req, res) => {
 
 // Get queue messages
 router.get('/queue', (req, res) => {
+  const messageQueue = claudeSession.getMessageQueue();
   res.json({
     messages: messageQueue,
     total: messageQueue.length
@@ -255,7 +200,10 @@ router.post('/queue/add', async (req, res) => {
     output: null
   };
 
-  messageQueue.push(newMessage);
+  // Add message to session manager's queue (this triggers auto-processing)
+  claudeSession.addMessageToQueue(newMessage);
+  
+  const messageQueue = claudeSession.getMessageQueue();
 
   // Broadcast queue update
   broadcastToClients({
@@ -275,73 +223,35 @@ router.post('/queue/add', async (req, res) => {
         total: messageQueue.length,
         pending: messageQueue.filter(m => m.status === 'pending').length,
         processing: messageQueue.filter(m => m.status === 'processing').length,
-        completed: messageQueue.filter(m => m.status === 'completed').length
+        completed: messageQueue.filter(m => m.status === 'completed').length,
+        error: messageQueue.filter(m => m.status === 'error').length
       },
       processing: processingStatus
     }
   });
-
-  // Auto-start processing if conditions are met (Claude-Autopilot style)
-  const claudeStatus = claudeSession.getStatus();
-  const hasProcessingMessages = messageQueue.some(m => m.status === 'processing');
-  const hasPendingMessages = messageQueue.some(m => m.status === 'pending');
-  
-  const shouldAutoStart = (
-    claudeStatus.sessionReady && 
-    !hasProcessingMessages && 
-    hasPendingMessages &&
-    !processingStatus.isProcessing
-  );
-  
-  if (shouldAutoStart) {
-    console.log('🚀 Auto-starting message processing (session ready, has pending messages)');
-    
-    // Auto-process the first pending message
-    processingStatus.isProcessing = true;
-    processingStatus.currentMessage = newMessage.id;
-    processingStatus.totalMessages = messageQueue.filter(m => m.status === 'pending').length;
-    
-    // Process message after a short delay
-    setTimeout(async () => {
-      try {
-        await claudeSession.addToQueue(newMessage);
-        
-        broadcastToClients({
-          type: 'processing-started',
-          data: { 
-            totalMessages: processingStatus.totalMessages,
-            autoStarted: true
-          }
-        });
-      } catch (error) {
-        console.error('❌ Auto-start failed:', error);
-        processingStatus.isProcessing = false;
-        processingStatus.currentMessage = null;
-      }
-    }, 200);
-  }
 
   res.json({
     success: true,
     message: 'Message added to queue',
     messageId: newMessage.id,
     queueLength: messageQueue.length,
-    autoProcessing: shouldAutoStart
+    autoProcessing: true
   });
 });
 
 // Delete message from queue
 router.delete('/queue/:id', (req, res) => {
   const { id } = req.params;
-  const messageIndex = messageQueue.findIndex(m => m.id === id);
   
-  if (messageIndex === -1) {
+  const deletedMessage = claudeSession.removeMessageFromQueue(id);
+  
+  if (!deletedMessage) {
     return res.status(404).json({
       error: 'Message not found'
     });
   }
 
-  const deletedMessage = messageQueue.splice(messageIndex, 1)[0];
+  const messageQueue = claudeSession.getMessageQueue();
   
   // Broadcast queue update
   broadcastToClients({
@@ -361,7 +271,8 @@ router.delete('/queue/:id', (req, res) => {
         total: messageQueue.length,
         pending: messageQueue.filter(m => m.status === 'pending').length,
         processing: messageQueue.filter(m => m.status === 'processing').length,
-        completed: messageQueue.filter(m => m.status === 'completed').length
+        completed: messageQueue.filter(m => m.status === 'completed').length,
+        error: messageQueue.filter(m => m.status === 'error').length
       },
       processing: processingStatus
     }
@@ -376,20 +287,25 @@ router.delete('/queue/:id', (req, res) => {
 
 // Clear queue
 router.delete('/queue', (req, res) => {
+  const messageQueue = claudeSession.getMessageQueue();
   const clearedCount = messageQueue.length;
-  messageQueue = [];
+  
+  // Clear session manager's queue
+  claudeSession.clearMessageQueue();
   
   // Also clear Claude output buffer
   claudeOutputBuffer = '';
   claudeCurrentScreen = '';
   lastClaudeOutputTime = 0;
   
+  const emptyQueue = claudeSession.getMessageQueue();
+  
   // Broadcast queue update
   broadcastToClients({
     type: 'queue-update',
     data: {
-      messages: messageQueue,
-      total: messageQueue.length
+      messages: emptyQueue,
+      total: emptyQueue.length
     }
   });
 
@@ -399,10 +315,11 @@ router.delete('/queue', (req, res) => {
     data: {
       status: 'ready',
       queue: {
-        total: messageQueue.length,
-        pending: messageQueue.filter(m => m.status === 'pending').length,
-        processing: messageQueue.filter(m => m.status === 'processing').length,
-        completed: messageQueue.filter(m => m.status === 'completed').length
+        total: emptyQueue.length,
+        pending: 0,
+        processing: 0,
+        completed: 0,
+        error: 0
       },
       processing: processingStatus
     }
@@ -500,7 +417,7 @@ router.post('/processing/next', async (req, res) => {
     processingStatus.isProcessing = true;
     processingStatus.currentMessage = nextMessage.id;
     
-    await claudeSession.addToQueue(nextMessage);
+    await claudeSession.sendMessage(nextMessage);
     
     broadcastToClients({
       type: 'message-status',
@@ -550,7 +467,8 @@ router.post('/processing/stop', async (req, res) => {
           total: messageQueue.length,
           pending: messageQueue.filter(m => m.status === 'pending').length,
           processing: messageQueue.filter(m => m.status === 'processing').length,
-          completed: messageQueue.filter(m => m.status === 'completed').length
+          completed: messageQueue.filter(m => m.status === 'completed').length,
+        error: messageQueue.filter(m => m.status === 'error').length
         },
         processing: processingStatus
       }
@@ -624,5 +542,6 @@ router.get('/claude/status', (req, res) => {
     status: claudeSession.getStatus()
   });
 });
+
 
 export default router;

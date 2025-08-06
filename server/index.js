@@ -7,7 +7,7 @@ import apiRoutes from './routes/api.js';
 import { setupWebSocket } from './websocket/index.js';
 
 const app = express();
-const BASE_PORT = parseInt(process.env.PORT) || 3001;
+const BASE_PORT = parseInt(process.env.PORT) || 5001;
 
 // Function to check if port is available
 function checkPortAvailable(port) {

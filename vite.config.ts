@@ -20,4 +20,14 @@ export default defineConfig({
   build: {
     outDir: 'dist',
   },
+  server: {
+    watch: {
+      ignored: [
+        '**/server/**',
+        '**/docs/**',
+        '**/node_modules/**',
+        '**/.git/**'
+      ]
+    }
+  }
 })

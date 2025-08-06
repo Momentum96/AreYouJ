@@ -22,7 +22,7 @@ export class WebSocketClient {
   private messageQueue: Array<{type: string, data?: any}> = [];
   private maxQueueSize = 100;
 
-  constructor(private url: string = 'ws://localhost:3001') {}
+  constructor(private url: string = 'ws://localhost:5001') {}
 
   connect(): Promise<void> {
     if (this.isConnecting || (this.ws && this.ws.readyState === WebSocket.CONNECTING)) {

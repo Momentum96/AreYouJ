@@ -207,11 +207,18 @@ export class ApiClient {
     }, '작업 처리 시작에 실패했습니다');
   }
 
-  // Stop processing
+  // Stop processing (legacy - for backward compatibility)
   async stopProcessing(): Promise<ApiResponse> {
     return this.request('/processing/stop', {
       method: 'POST',
     }, '작업 처리 중지에 실패했습니다');
+  }
+
+  // Stop Claude session (proper session termination)
+  async stopClaudeSession(): Promise<ApiResponse> {
+    return this.request('/claude/stop', {
+      method: 'POST',
+    }, 'Claude 세션 종료에 실패했습니다');
   }
 
   // Health check method

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { Task, SubTask, SearchFilters, FilterOptions } from '../types/task';
+import type { Task, SubTask, FilterOptions } from '../types/task';
 
 const defaultFilters: FilterOptions = {
   status: ['pending', 'in-progress', 'done'],

@@ -25,13 +25,17 @@ interface StatsHeaderProps {
 export const StatsHeader = ({ stats, tasks, appName }: StatsHeaderProps) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const handleExport = (includeDetails: boolean) => {
+  const handleExport = async (includeDetails: boolean) => {
     const today = new Date();
     const formattedDate = `${today.getFullYear()}${(today.getMonth() + 1)
       .toString()
       .padStart(2, "0")}${today.getDate().toString().padStart(2, "0")}`;
-    exportToExcel(tasks, `${appName}-tasks-${formattedDate}`, includeDetails);
-    setIsModalOpen(false); // Close modal after export
+    try {
+      await exportToExcel(tasks, `${appName}-tasks-${formattedDate}`, includeDetails);
+      setIsModalOpen(false); // Close modal after export
+    } catch (error) {
+      console.error("Export failed:", error);
+    }
   };
 
   return (

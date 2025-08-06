@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import type { Task } from "@/types/task";
 
 export function cn(...inputs: ClassValue[]) {
@@ -18,7 +18,7 @@ interface ExcelRow {
   Details?: string;
 }
 
-export const exportToExcel = (
+export const exportToExcel = async (
   tasks: Task[],
   fileName: string,
   includeDetails: boolean
@@ -56,29 +56,42 @@ export const exportToExcel = (
     return [mainTask, ...subTasks];
   });
 
-  // 2. 워크시트 생성
-  const worksheet = XLSX.utils.json_to_sheet(flattenedData);
+  // 2. 워크북 및 워크시트 생성
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Tasks");
 
-  // 3. 컬럼 너비 설정
-  const cols = [
-    { wch: 10 }, // ID
-    { wch: 15 }, // Type
-    { wch: 50 }, // Title
-    { wch: 15 }, // Status
-    { wch: 15 }, // Priority
-    { wch: 20 }, // Dependencies
-    { wch: 60 }, // Notes
+  // 3. 컬럼 정의 및 너비 설정
+  const columns = [
+    { key: "ID", header: "ID", width: 10 },
+    { key: "Type", header: "Type", width: 15 },
+    { key: "Title", header: "Title", width: 50 },
+    { key: "Status", header: "Status", width: 15 },
+    { key: "Priority", header: "Priority", width: 15 },
+    { key: "Dependencies", header: "Dependencies", width: 20 },
+    { key: "Notes", header: "Notes", width: 60 },
   ];
 
   if (includeDetails) {
-    cols.push({ wch: 80 }); // Details
+    columns.push({ key: "Details", header: "Details", width: 80 });
   }
-  worksheet["!cols"] = cols;
 
-  // 4. 워크북 생성 및 워크시트 추가
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Tasks");
+  worksheet.columns = columns;
 
-  // 5. 파일로 내보내기
-  XLSX.writeFile(workbook, `${fileName}.xlsx`);
+  // 4. 데이터 추가
+  flattenedData.forEach((row) => {
+    worksheet.addRow(row);
+  });
+
+  // 5. 브라우저에서 다운로드
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${fileName}.xlsx`;
+  link.click();
+  window.URL.revokeObjectURL(url);
 };

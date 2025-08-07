@@ -21,6 +21,7 @@ export default defineConfig({
     outDir: 'dist',
   },
   server: {
+    open: true,
     watch: {
       ignored: [
         '**/server/**',

@@ -795,6 +795,52 @@ export class ClaudeSessionManager extends EventEmitter {
     }
   }
 
+  // Claude-Autopilot 스타일: 키 전송 기능 (ESC, Enter 등)
+  sendKeyToClaudeProcess(key) {
+    if (!this.pythonProcess || !this.pythonProcess.stdin) {
+      this.log(`❌ Cannot send keypress: Claude process not available`);
+      throw new Error('Claude process not available for keypress input');
+    }
+
+    this.log(`⌨️ Sending keypress: ${key}`);
+    
+    try {
+      switch (key) {
+        case 'up':
+          this.pythonProcess.stdin.write('\x1b[A');
+          break;
+        case 'down':
+          this.pythonProcess.stdin.write('\x1b[B');
+          break;
+        case 'left':
+          this.pythonProcess.stdin.write('\x1b[D');
+          break;
+        case 'right':
+          this.pythonProcess.stdin.write('\x1b[C');
+          break;
+        case 'enter':
+          this.pythonProcess.stdin.write('\r');
+          break;
+        case 'escape':
+          this.pythonProcess.stdin.write('\x1b');
+          break;
+        case 'space':
+          this.pythonProcess.stdin.write(' ');
+          break;
+        case 'tab':
+          this.pythonProcess.stdin.write('\t');
+          break;
+        default:
+          this.log(`❌ Unknown key: ${key}`);
+          throw new Error(`Unknown key command: ${key}`);
+      }
+      this.log(`✅ Keypress '${key}' sent successfully`);
+    } catch (error) {
+      this.log(`❌ Failed to send keypress '${key}': ${error.message}`);
+      throw new Error(`Failed to send keypress '${key}': ${error.message}`);
+    }
+  }
+
   cleanup() {
     this.sessionReady = false;
     this.isStarting = false;

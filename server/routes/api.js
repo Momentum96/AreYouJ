@@ -543,5 +543,50 @@ router.get('/claude/status', (req, res) => {
   });
 });
 
+// Claude 키 전송 (ESC, Enter 등)
+router.post('/claude/keypress', (req, res) => {
+  try {
+    const { key } = req.body;
+    
+    if (!key || typeof key !== 'string') {
+      return res.status(400).json({
+        error: 'Key is required and must be a string'
+      });
+    }
+
+    // 지원되는 키 목록
+    const supportedKeys = ['escape', 'enter', 'up', 'down', 'left', 'right', 'space', 'tab'];
+    
+    if (!supportedKeys.includes(key)) {
+      return res.status(400).json({
+        error: `Unsupported key: ${key}. Supported keys: ${supportedKeys.join(', ')}`
+      });
+    }
+
+    const claudeStatus = claudeSession.getStatus();
+    
+    if (!claudeStatus.sessionReady) {
+      return res.status(400).json({
+        error: 'Claude session not ready. Start session first.'
+      });
+    }
+
+    claudeSession.sendKeyToClaudeProcess(key);
+    
+    res.json({
+      success: true,
+      message: `Key '${key}' sent to Claude successfully`,
+      key: key,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to send keypress:', error);
+    res.status(500).json({
+      error: `Failed to send keypress: ${error.message}`
+    });
+  }
+});
+
 
 export default router;

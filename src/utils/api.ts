@@ -221,6 +221,18 @@ export class ApiClient {
     }, 'Claude 세션 종료에 실패했습니다');
   }
 
+  // Send keypress to Claude terminal (ESC, Enter, etc.)
+  async sendKeypress(key: string): Promise<ApiResponse> {
+    if (!key || typeof key !== 'string') {
+      throw new Error('키 이름을 입력해주세요');
+    }
+
+    return this.request('/claude/keypress', {
+      method: 'POST',
+      body: JSON.stringify({ key }),
+    }, `'${key}' 키 전송에 실패했습니다`);
+  }
+
   // Health check method
   async healthCheck(): Promise<{ status: string; timestamp: string; service: string }> {
     return this.request('/health', {}, '서버 연결 확인에 실패했습니다');

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
-import { Play, Square, Trash2, Wifi, WifiOff } from 'lucide-react';
+import { Play, Square, Trash2, Wifi, WifiOff, ChevronUp, ChevronDown } from 'lucide-react';
 import { apiClient, type QueueMessage, type QueueStatus } from '../utils/api';
 import { wsClient } from '../utils/websocket';
 import { ClaudeTerminalRenderer } from '../utils/claude-terminal.js';
@@ -15,6 +15,7 @@ export const Automation = () => {
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [isStoppingSession, setIsStoppingSession] = useState(false);
   const [isClearingQueue, setIsClearingQueue] = useState(false);
+  const [isSendingKey, setIsSendingKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<QueueStatus | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
@@ -356,6 +357,22 @@ export const Automation = () => {
     }
   };
 
+  // 키 전송 함수 (ESC, Enter 등)
+  const sendKeyToClaudeTerminal = async (key: string) => {
+    if (isSendingKey) return;
+    
+    setIsSendingKey(true);
+    try {
+      await apiClient.sendKeypress(key);
+      setError(null);
+    } catch (error) {
+      console.error(`Failed to send ${key} key:`, error);
+      setError(`${key} 키 전송에 실패했습니다`);
+    } finally {
+      setIsSendingKey(false);
+    }
+  };
+
   const getStatusColor = (status: QueueMessage['status']) => {
     switch (status) {
       case 'pending': return 'bg-yellow-500';
@@ -578,7 +595,7 @@ export const Automation = () => {
           {/* Terminal Output */}
           <Card className="flex flex-col overflow-hidden flex-1 min-h-0">
             <div className="p-4 border-b border-border flex-shrink-0">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">실시간 출력</h2>
                 <div className="flex items-center gap-2 text-sm">
                   <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
@@ -591,6 +608,50 @@ export const Automation = () => {
                   </span>
                 </div>
               </div>
+              
+              {/* 키 전송 버튼들 */}
+              {sessionReady && (
+                <div className="flex gap-2 flex-wrap items-center">
+                  <Button
+                    onClick={() => sendKeyToClaudeTerminal('escape')}
+                    disabled={!sessionReady || isSendingKey}
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                  >
+                    ESC
+                  </Button>
+                  <Button
+                    onClick={() => sendKeyToClaudeTerminal('enter')}
+                    disabled={!sessionReady || isSendingKey}
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                  >
+                    Enter
+                  </Button>
+                  <Button
+                    onClick={() => sendKeyToClaudeTerminal('up')}
+                    disabled={!sessionReady || isSendingKey}
+                    variant="outline"
+                    size="sm"
+                    className="text-xs flex items-center gap-1"
+                  >
+                    <ChevronUp className="w-3 h-3" />
+                    Up
+                  </Button>
+                  <Button
+                    onClick={() => sendKeyToClaudeTerminal('down')}
+                    disabled={!sessionReady || isSendingKey}
+                    variant="outline"
+                    size="sm"
+                    className="text-xs flex items-center gap-1"
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                    Down
+                  </Button>
+                </div>
+              )}
             </div>
             
             {/* Terminal */}

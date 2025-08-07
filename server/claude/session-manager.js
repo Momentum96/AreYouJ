@@ -3,13 +3,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import EventEmitter from 'events';
 import fs from 'fs';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Queue persistence file path
+// Queue persistence file paths
 const QUEUE_DATA_DIR = path.join(__dirname, '../data');
-const QUEUE_FILE_PATH = path.join(QUEUE_DATA_DIR, 'queue.json');
+const QUEUES_DIR = path.join(QUEUE_DATA_DIR, 'queues');
 const SETTINGS_FILE_PATH = path.join(QUEUE_DATA_DIR, 'settings.json');
 
 export class ClaudeSessionManager extends EventEmitter {
@@ -26,6 +27,7 @@ export class ClaudeSessionManager extends EventEmitter {
     this.currentScreenBuffer = '';
     this.forceKillTimer = null;
     this.lastStopTime = 0;
+    this.currentWorkingDirectory = null; // Current working directory for queue management
     
     // Debug logging
     this.debugLogFile = path.join(__dirname, '../logs/claude-debug.log');
@@ -33,6 +35,7 @@ export class ClaudeSessionManager extends EventEmitter {
     
     // Queue persistence setup
     this.ensureQueueDataDirectory();
+    this.loadCurrentWorkingDirectory();
     this.loadQueueFromFile();
     
     // Bind methods for proper 'this' context
@@ -108,20 +111,113 @@ export class ClaudeSessionManager extends EventEmitter {
         fs.mkdirSync(QUEUE_DATA_DIR, { recursive: true });
         this.log('📁 Created queue data directory');
       }
+      if (!fs.existsSync(QUEUES_DIR)) {
+        fs.mkdirSync(QUEUES_DIR, { recursive: true });
+        this.log('📁 Created queues directory');
+      }
     } catch (error) {
       console.error('Failed to create queue data directory:', error);
     }
   }
 
+  // Working directory management
+  loadCurrentWorkingDirectory() {
+    try {
+      if (fs.existsSync(SETTINGS_FILE_PATH)) {
+        const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE_PATH, 'utf8'));
+        this.currentWorkingDirectory = settings.projectHomePath || process.cwd();
+      } else {
+        this.currentWorkingDirectory = process.cwd();
+      }
+      this.log(`📁 Current working directory: ${this.currentWorkingDirectory}`);
+    } catch (error) {
+      console.error('Failed to load working directory:', error);
+      this.currentWorkingDirectory = process.cwd();
+    }
+  }
+
+  setWorkingDirectory(workingDir) {
+    if (this.currentWorkingDirectory !== workingDir) {
+      // Save current queue before switching
+      this.saveQueueToFile();
+      
+      // Update working directory
+      const oldDir = this.currentWorkingDirectory;
+      this.currentWorkingDirectory = workingDir;
+      
+      // Load queue for new directory
+      this.loadQueueFromFile();
+      
+      this.log(`📁 Switched working directory: ${oldDir} → ${workingDir}`);
+      this.emit('working-directory-changed', { oldDir, newDir: workingDir, messageQueue: this.messageQueue });
+    }
+  }
+
+  generateDirectoryHash(dirPath) {
+    return crypto.createHash('sha256').update(dirPath).digest('hex').substring(0, 16);
+  }
+
+  getQueueFilePath() {
+    if (!this.currentWorkingDirectory) {
+      return path.join(QUEUE_DATA_DIR, 'queue.json'); // fallback to old location
+    }
+    
+    const dirHash = this.generateDirectoryHash(this.currentWorkingDirectory);
+    const queueDir = path.join(QUEUES_DIR, dirHash);
+    
+    // Ensure directory exists
+    try {
+      if (!fs.existsSync(queueDir)) {
+        fs.mkdirSync(queueDir, { recursive: true });
+      }
+    } catch (error) {
+      console.error('Failed to create queue directory:', error);
+    }
+    
+    return path.join(queueDir, 'queue.json');
+  }
+
+  // Create local time string (Korean timezone)
+  createLocalTimeString() {
+    const now = new Date();
+    const koreaTime = new Date(now.getTime() + (9 * 60 * 60 * 1000)); // UTC+9
+    return koreaTime.toISOString().replace('Z', '+09:00');
+  }
+
+  // Migration helper: Move old global queue to current working directory
+  migrateOldQueueIfNeeded() {
+    const oldQueuePath = path.join(QUEUE_DATA_DIR, 'queue.json');
+    const newQueuePath = this.getQueueFilePath();
+    
+    // If old queue exists but new one doesn't, migrate
+    if (fs.existsSync(oldQueuePath) && !fs.existsSync(newQueuePath)) {
+      try {
+        const oldQueueData = fs.readFileSync(oldQueuePath, 'utf8');
+        fs.writeFileSync(newQueuePath, oldQueueData, 'utf8');
+        this.log(`📦 Migrated old queue to working directory: ${newQueuePath}`);
+        
+        // Optionally remove old queue after successful migration
+        // fs.unlinkSync(oldQueuePath);
+      } catch (error) {
+        console.error('Failed to migrate old queue:', error);
+      }
+    }
+  }
+
   loadQueueFromFile() {
     try {
-      if (fs.existsSync(QUEUE_FILE_PATH)) {
-        const fileContent = fs.readFileSync(QUEUE_FILE_PATH, 'utf8');
+      // Try migration first
+      this.migrateOldQueueIfNeeded();
+      
+      const queueFilePath = this.getQueueFilePath();
+      
+      if (fs.existsSync(queueFilePath)) {
+        const fileContent = fs.readFileSync(queueFilePath, 'utf8');
         const savedQueue = JSON.parse(fileContent);
         
         if (Array.isArray(savedQueue)) {
           this.messageQueue = savedQueue;
-          this.log(`📁 Loaded ${this.messageQueue.length} messages from queue file`);
+          this.log(`📁 Loaded ${this.messageQueue.length} messages from queue file: ${queueFilePath}`);
           
           // Log queue contents for debugging
           const pending = this.messageQueue.filter(m => m.status === 'pending').length;
@@ -145,7 +241,7 @@ export class ClaudeSessionManager extends EventEmitter {
           this.messageQueue = [];
         }
       } else {
-        this.log('📁 No existing queue file, starting with empty queue');
+        this.log(`📁 No existing queue file for directory: ${this.currentWorkingDirectory}, starting with empty queue`);
         this.messageQueue = [];
       }
     } catch (error) {
@@ -157,9 +253,10 @@ export class ClaudeSessionManager extends EventEmitter {
 
   saveQueueToFile() {
     try {
+      const queueFilePath = this.getQueueFilePath();
       const queueData = JSON.stringify(this.messageQueue, null, 2);
-      fs.writeFileSync(QUEUE_FILE_PATH, queueData, 'utf8');
-      this.debugLog(`💾 Saved ${this.messageQueue.length} messages to queue file`);
+      fs.writeFileSync(queueFilePath, queueData, 'utf8');
+      this.debugLog(`💾 Saved ${this.messageQueue.length} messages to queue file: ${queueFilePath}`);
     } catch (error) {
       console.error('Failed to save queue to file:', error);
       this.log('❌ Failed to save queue to file');
@@ -879,7 +976,7 @@ export class ClaudeSessionManager extends EventEmitter {
       
       this.log(`✅ Message ${message.id} completed`);
       message.status = 'completed';
-      message.completedAt = new Date().toISOString();
+      message.completedAt = this.createLocalTimeString();
       this.currentlyProcessing = null;
       this.emit('message-completed', message);
       

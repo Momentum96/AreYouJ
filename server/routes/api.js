@@ -248,7 +248,7 @@ router.post('/queue/add', async (req, res) => {
     id: Date.now().toString(),
     message: message.trim(),
     status: 'pending',
-    createdAt: new Date().toISOString(),
+    createdAt: claudeSession.createLocalTimeString(),
     completedAt: null,
     output: null
   };
@@ -700,6 +700,11 @@ router.put('/settings/home-path', (req, res) => {
       });
     }
 
+    // Update Claude session manager's working directory if changed
+    if (oldPath !== projectHomePath) {
+      claudeSession.setWorkingDirectory(projectHomePath);
+    }
+
     // Broadcast settings update
     broadcastToClients({
       type: 'settings-update',
@@ -803,5 +808,20 @@ router.get('/directories', (req, res) => {
   }
 });
 
+// Handle working directory changes
+claudeSession.on('working-directory-changed', (data) => {
+  console.log(`📁 Working directory changed: ${data.oldDir} → ${data.newDir}`);
+  
+  // Broadcast working directory change to clients
+  broadcastToClients({
+    type: 'working-directory-changed',
+    data: {
+      oldDir: data.oldDir,
+      newDir: data.newDir,
+      messages: data.messageQueue,
+      total: data.messageQueue.length
+    }
+  });
+});
 
 export default router;

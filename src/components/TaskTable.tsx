@@ -7,11 +7,13 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-import { ChevronDown } from 'lucide-react';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { ChevronDown, Send, CheckCircle, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
 import type { SubTask, Task } from '../types/task';
 import { TaskDetailsModal } from './TaskDetailsModal';
 import { CircularProgress } from '@/components/ui/circular-progress';
+import { apiClient } from '../utils/api';
 
 interface TaskTableProps {
   tasks: Task[];
@@ -64,10 +66,20 @@ const PriorityBadge = ({ priority }: { priority: 'low' | 'medium' | 'high' }) =>
 const gridCellClass = "px-4 py-3 text-sm border-r border-border last:border-r-0";
 
 // 서브태스크 행 컴포넌트
-const SubTaskRow = ({ subtask, onShowDetails }: { subtask: SubTask; onShowDetails: (task: SubTask) => void }) => (
+const SubTaskRow = ({ 
+  subtask, 
+  onShowDetails,
+  onAddToQueue,
+  isAddingToQueue
+}: { 
+  subtask: SubTask; 
+  onShowDetails: (task: SubTask) => void;
+  onAddToQueue: (taskId: string) => void;
+  isAddingToQueue: string | null;
+}) => (
   <ContextMenu>
     <ContextMenuTrigger asChild>
-      <div className="grid grid-cols-6 bg-muted/30 hover:bg-muted/40 border-b border-border animate-in fade-in-0 slide-in-from-top-2 duration-300">
+      <div className="grid grid-cols-7 bg-muted/30 hover:bg-muted/40 border-b border-border animate-in fade-in-0 slide-in-from-top-2 duration-300">
         <div className={`${gridCellClass} pl-12 font-mono`}>{subtask.id}</div>
         <div className={gridCellClass}>
           <div className="space-y-1">
@@ -89,6 +101,27 @@ const SubTaskRow = ({ subtask, onShowDetails }: { subtask: SubTask; onShowDetail
             {subtask.notes || 'None'}
           </p>
         </div>
+        <div className={`${gridCellClass} flex justify-center items-center`}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddToQueue(subtask.id);
+            }}
+            disabled={isAddingToQueue === subtask.id}
+            className="h-8 px-2 text-xs"
+          >
+            {isAddingToQueue === subtask.id ? (
+              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                <Send className="w-3 h-3 mr-1" />
+                Queue
+              </>
+            )}
+          </Button>
+        </div>
       </div>
     </ContextMenuTrigger>
     <ContextMenuContent>
@@ -103,6 +136,8 @@ export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [selectedTask, setSelectedTask] = useState<Task | SubTask | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [isAddingToQueue, setIsAddingToQueue] = useState<string | null>(null);
 
   const toggleTask = (taskId: string) => {
     const newExpanded = new Set(expandedTasks);
@@ -124,17 +159,54 @@ export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
     setSelectedTask(null);
   };
 
+  const addTaskToQueue = async (taskId: string) => {
+    if (isAddingToQueue) return;
+    
+    setIsAddingToQueue(taskId);
+    
+    try {
+      const message = `agent-progress-tracker 에이전트를 활용해여 ${taskId} Task를 수행하세요. 다른 Tasks들은 별도로 제가 요청을 드릴테니 해당 문제를 집중해서 해결해주세요. Think Hard, Mega Think, Ultrathink`;
+      
+      await apiClient.addMessage(message);
+      
+      // 성공 알림 표시
+      setNotification({
+        message: `Task ${taskId}가 메시지 큐에 등록되었습니다!`,
+        type: 'success'
+      });
+      
+      // 3초 후 알림 자동 제거
+      setTimeout(() => {
+        setNotification(null);
+      }, 3000);
+      
+    } catch (error) {
+      console.error('Failed to add task to queue:', error);
+      setNotification({
+        message: '메시지 큐 등록에 실패했습니다.',
+        type: 'error'
+      });
+      
+      setTimeout(() => {
+        setNotification(null);
+      }, 3000);
+    } finally {
+      setIsAddingToQueue(null);
+    }
+  };
+
   return (
     <>
       <div className="flex-1 overflow-auto border rounded-lg bg-card">
         {/* 헤더 */}
-        <div className="grid grid-cols-6 bg-muted/50 border-b border-border">
+        <div className="grid grid-cols-7 bg-muted/50 border-b border-border">
           <div className={`${gridCellClass} font-semibold`}>ID</div>
           <div className={`${gridCellClass} font-semibold`}>Title</div>
           <div className={`${gridCellClass} font-semibold text-center`}>Status</div>
           <div className={`${gridCellClass} font-semibold text-center`}>Priority</div>
           <div className={`${gridCellClass} font-semibold text-center`}>Dependencies</div>
           <div className={`${gridCellClass} font-semibold text-center`}>Notes</div>
+          <div className={`${gridCellClass} font-semibold text-center`}>Actions</div>
         </div>
 
         {/* 바디 */}
@@ -159,7 +231,7 @@ export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
                 <ContextMenu>
                   <ContextMenuTrigger asChild>
                     <div 
-                      className={`grid grid-cols-6 border-b border-border ${
+                      className={`grid grid-cols-7 border-b border-border ${
                         hasSubtasks 
                           ? 'cursor-pointer hover:bg-muted/30' 
                           : 'hover:bg-muted/20'
@@ -202,6 +274,27 @@ export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
                           {task.notes || 'None'}
                         </p>
                       </div>
+                      <div className={`${gridCellClass} flex justify-center items-center`}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addTaskToQueue(task.id);
+                          }}
+                          disabled={isAddingToQueue === task.id}
+                          className="h-8 px-2 text-xs"
+                        >
+                          {isAddingToQueue === task.id ? (
+                            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <>
+                              <Send className="w-3 h-3 mr-1" />
+                              Queue
+                            </>
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   </ContextMenuTrigger>
                   <ContextMenuContent>
@@ -221,7 +314,12 @@ export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
                           className={`${isExpanded ? 'animate-in fade-in-0 slide-in-from-top-1 duration-300' : ''}`}
                           style={{ animationDelay: isExpanded ? `${index * 50}ms` : '0ms' }}
                         >
-                          <SubTaskRow subtask={subtask} onShowDetails={showTaskDetails} />
+                          <SubTaskRow 
+                            subtask={subtask} 
+                            onShowDetails={showTaskDetails}
+                            onAddToQueue={addTaskToQueue}
+                            isAddingToQueue={isAddingToQueue}
+                          />
                         </div>
                       ))}
                     </div>
@@ -239,6 +337,37 @@ export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
         isOpen={isModalOpen} 
         onClose={closeModal} 
       />
+
+      {/* 알림 */}
+      {notification && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-md">
+          <Alert className={
+            notification.type === 'success' 
+              ? "bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800"
+              : "bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800"
+          }>
+            {notification.type === 'success' ? (
+              <CheckCircle className="h-4 w-4 text-green-600" />
+            ) : (
+              <AlertCircle className="h-4 w-4 text-red-600" />
+            )}
+            <AlertTitle className={
+              notification.type === 'success'
+                ? "text-green-800 dark:text-green-200"
+                : "text-red-800 dark:text-red-200"
+            }>
+              {notification.type === 'success' ? '성공' : '오류'}
+            </AlertTitle>
+            <AlertDescription className={
+              notification.type === 'success'
+                ? "text-green-700 dark:text-green-300"
+                : "text-red-700 dark:text-red-300"
+            }>
+              {notification.message}
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
     </>
   );
 };

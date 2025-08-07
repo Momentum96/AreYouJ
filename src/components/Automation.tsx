@@ -19,7 +19,7 @@ export const Automation = () => {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<QueueStatus | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
-  const [sessionReady, setSessionReady] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState<'idle' | 'starting' | 'ready' | 'error'>('idle');
 
   // Claude Terminal Renderer (Claude-Autopilot style)
   const terminalRenderer = useRef<ClaudeTerminalRenderer>(new ClaudeTerminalRenderer());
@@ -46,7 +46,7 @@ export const Automation = () => {
       if (message.data.status === 'connected') {
         // Check if Claude session info is available
         if (message.data.claudeSession) {
-          setSessionReady(message.data.claudeSession.sessionReady);
+          setSessionStatus(message.data.claudeSession.sessionReady ? 'ready' : 'idle');
         }
         
         // Handle initial Claude output (Claude-Autopilot style)
@@ -96,7 +96,7 @@ export const Automation = () => {
     // New Claude session event handlers
     const handleSessionStatus = (message) => {
       const { status, sessionReady: ready, details } = message.data;
-      setSessionReady(ready || false);
+      setSessionStatus(ready ? 'ready' : 'idle');
     };
 
     // Removed handleTerminalOutput - Claude-Autopilot style uses only claude-output event
@@ -144,6 +144,14 @@ export const Automation = () => {
       // Real errors handled silently
     };
 
+    // Handle working directory changes
+    const handleWorkingDirectoryChanged = (message) => {
+      console.log('Working directory changed, refreshing queue...');
+      // Reload queue for new working directory
+      loadQueue();
+      loadStatus();
+    };
+
     // Remove any existing handlers first to prevent duplicates
     wsClient.off('connection', handleConnection);
     wsClient.off('queue-update', handleQueueUpdate);
@@ -155,6 +163,7 @@ export const Automation = () => {
     wsClient.off('message-status', handleMessageStatus);
     wsClient.off('session-error', handleSessionError);
     wsClient.off('process-error', handleProcessError);
+    wsClient.off('working-directory-changed', handleWorkingDirectoryChanged);
 
     // Register event handlers
     wsClient.on('connection', handleConnection);
@@ -169,6 +178,7 @@ export const Automation = () => {
     wsClient.on('message-status', handleMessageStatus);
     wsClient.on('session-error', handleSessionError);
     wsClient.on('process-error', handleProcessError);
+    wsClient.on('working-directory-changed', handleWorkingDirectoryChanged);
 
     // Set up WebSocket connection
     const connectWebSocket = async () => {
@@ -198,6 +208,7 @@ export const Automation = () => {
       wsClient.off('message-status', handleMessageStatus);
       wsClient.off('session-error', handleSessionError);
       wsClient.off('process-error', handleProcessError);
+      wsClient.off('working-directory-changed', handleWorkingDirectoryChanged);
       // Don't disconnect here to prevent React StrictMode issues
     };
   }, []);
@@ -233,7 +244,7 @@ export const Automation = () => {
     try {
       const response = await apiClient.getStatus();
       const isSessionReady = response.claude?.sessionReady || false;
-      setSessionReady(isSessionReady);
+      setSessionStatus(isSessionReady ? 'ready' : 'idle');
       
       // Update terminal state based on session status only if there's no real terminal content
       if (terminalRef.current) {
@@ -250,11 +261,11 @@ export const Automation = () => {
               </div>
             `;
           } else {
-            // Session not ready, show waiting message
+            // Session not ready, show neutral waiting message
             terminalRef.current.innerHTML = `
               <div class="text-gray-500 text-xs flex items-center gap-2">
-                <span class="animate-pulse">●</span>
-                실시간 Claude 터미널 출력 대기 중...
+                <span class="text-gray-400">●</span>
+                Claude 터미널 대기 중...
               </div>
             `;
           }
@@ -360,9 +371,12 @@ export const Automation = () => {
     setIsStartingSession(true);
     
     // Claude-Autopilot style: Only start session, not processing
-    if (!sessionReady) {
+    if (sessionStatus !== 'ready') {
       
       try {
+        // 세션 시작 상태로 변경
+        setSessionStatus('starting');
+        
         // 세션 시작 전 터미널 상태 메시지 표시
         if (terminalRef.current) {
           terminalRef.current.innerHTML = `
@@ -386,20 +400,21 @@ export const Automation = () => {
         const data = await response.json();
         
         if (data.success) {
-          setSessionReady(true);
+          setSessionStatus('ready');
         }
         
         setError(null);
       } catch (error) {
         console.error('Failed to start Claude session:', error);
         setError('Claude 세션 시작에 실패했습니다');
+        setSessionStatus('error');
         
         // 오류 시 초기 대기 메시지로 복원
         if (terminalRef.current) {
           terminalRef.current.innerHTML = `
             <div class="text-gray-500 text-xs flex items-center gap-2">
-              <span class="animate-pulse">●</span>
-              실시간 Claude 터미널 출력 대기 중...
+              <span class="text-red-400">●</span>
+              Claude 세션 시작에 실패했습니다.
             </div>
           `;
         }
@@ -415,7 +430,7 @@ export const Automation = () => {
     setIsStoppingSession(true);
     try {
       await apiClient.stopClaudeSession();
-      setSessionReady(false);
+      setSessionStatus('idle');
       setIsProcessing(false);
       
       // 터미널 클리어 및 세션 종료 메시지 표시
@@ -514,30 +529,14 @@ export const Automation = () => {
             {wsConnected ? (
               <>
                 <Wifi className="w-4 h-4 text-green-500" />
-                <span className="text-xs text-green-500 hidden sm:inline">실시간</span>
+                <span className="text-xs text-green-500 hidden sm:inline">서버 온라인</span>
               </>
             ) : (
               <>
                 <WifiOff className="w-4 h-4 text-red-500" />
-                <span className="text-xs text-red-500 hidden sm:inline">오프라인</span>
+                <span className="text-xs text-red-500 hidden sm:inline">서버 오프라인</span>
               </>
             )}
-          </div>
-          
-          {/* Claude Session Status */}
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${sessionReady ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></div>
-            <span className="text-xs text-muted-foreground hidden md:inline">
-              Claude: {sessionReady ? '준비됨' : '세션 시작 중...'}
-            </span>
-          </div>
-          
-          {/* Processing Status */}
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${isProcessing ? 'bg-blue-500 animate-pulse' : 'bg-gray-400'}`}></div>
-            <span className="text-xs text-muted-foreground hidden md:inline">
-              {isLoading ? '로딩중...' : isProcessing ? '처리중' : '대기중'}
-            </span>
           </div>
         </div>
       </div>
@@ -567,7 +566,7 @@ export const Automation = () => {
       </div>
 
       {/* Main Content Section - Dashboard's TaskTable position */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
+      <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
         {/* Left Panel: Message Queue (단독) */}
         <Card className="flex flex-col overflow-hidden min-h-0">
           <div className="p-4 border-b border-border flex-shrink-0">
@@ -650,17 +649,23 @@ export const Automation = () => {
               <div className="grid grid-cols-3 gap-2">
                 <Button
                   onClick={startProcessing}
-                  disabled={sessionReady || isStartingSession}
+                  disabled={sessionStatus === 'ready' || isStartingSession}
                   className="flex items-center justify-center gap-2 text-sm"
-                  variant={sessionReady ? "secondary" : "default"}
+                  variant={sessionStatus === 'ready' ? "secondary" : "default"}
                 >
                   <Play className="w-4 h-4" />
-                  <span className="hidden sm:inline">{isStartingSession ? '시작중...' : sessionReady ? '세션 실행중' : '세션 시작'}</span>
-                  <span className="sm:hidden">{sessionReady ? '실행중' : '시작'}</span>
+                  <span className="hidden sm:inline">
+                    {isStartingSession ? '시작중...' : 
+                     sessionStatus === 'ready' ? '세션 실행중' : 
+                     '세션 시작'}
+                  </span>
+                  <span className="sm:hidden">
+                    {sessionStatus === 'ready' ? '실행중' : '시작'}
+                  </span>
                 </Button>
                 <Button
                   onClick={stopClaudeSession}
-                  disabled={!sessionReady || isStoppingSession}
+                  disabled={sessionStatus !== 'ready' || isStoppingSession}
                   variant="destructive"
                   className="flex items-center justify-center gap-2 text-sm"
                 >
@@ -688,23 +693,27 @@ export const Automation = () => {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">실시간 출력</h2>
                 <div className="flex items-center gap-2 text-sm">
-                  <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
+                  <span className={`w-2 h-2 rounded-full ${
+                    sessionStatus === 'ready' ? 'bg-green-500 animate-pulse' : 
+                    sessionStatus === 'starting' ? 'bg-yellow-500 animate-pulse' :
+                    sessionStatus === 'error' ? 'bg-red-500' :
+                    'bg-gray-500 animate-pulse'
+                  }`}></span>
                   <span className="text-muted-foreground text-xs hidden sm:inline">
-                    {wsConnected ? '연결됨' : '연결 끊김'}
-                  </span>
-                  <span className={`w-2 h-2 rounded-full ${sessionReady ? 'bg-blue-500 animate-pulse' : 'bg-yellow-500'}`}></span>
-                  <span className="text-muted-foreground text-xs hidden sm:inline">
-                    {sessionReady ? 'Claude 준비됨' : 'Claude 시작 중...'}
+                    {sessionStatus === 'ready' ? 'Claude 세션 연결됨' : 
+                     sessionStatus === 'starting' ? 'Claude 세션 시작 중...' :
+                     sessionStatus === 'error' ? 'Claude 세션 오류' :
+                     'Claude 세션 대기'}
                   </span>
                 </div>
               </div>
               
               {/* 키 전송 버튼들 */}
-              {sessionReady && (
+              {sessionStatus === 'ready' && (
                 <div className="flex gap-2 flex-wrap items-center">
                   <Button
                     onClick={() => sendKeyToClaudeTerminal('escape')}
-                    disabled={!sessionReady || isSendingKey}
+                    disabled={sessionStatus !== 'ready' || isSendingKey}
                     variant="outline"
                     size="sm"
                     className="text-xs"
@@ -713,7 +722,7 @@ export const Automation = () => {
                   </Button>
                   <Button
                     onClick={() => sendKeyToClaudeTerminal('enter')}
-                    disabled={!sessionReady || isSendingKey}
+                    disabled={sessionStatus !== 'ready' || isSendingKey}
                     variant="outline"
                     size="sm"
                     className="text-xs"
@@ -722,7 +731,7 @@ export const Automation = () => {
                   </Button>
                   <Button
                     onClick={() => sendKeyToClaudeTerminal('up')}
-                    disabled={!sessionReady || isSendingKey}
+                    disabled={sessionStatus !== 'ready' || isSendingKey}
                     variant="outline"
                     size="sm"
                     className="text-xs flex items-center gap-1"
@@ -732,7 +741,7 @@ export const Automation = () => {
                   </Button>
                   <Button
                     onClick={() => sendKeyToClaudeTerminal('down')}
-                    disabled={!sessionReady || isSendingKey}
+                    disabled={sessionStatus !== 'ready' || isSendingKey}
                     variant="outline"
                     size="sm"
                     className="text-xs flex items-center gap-1"

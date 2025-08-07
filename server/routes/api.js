@@ -14,7 +14,8 @@ function loadSettings() {
   try {
     if (!fs.existsSync(SETTINGS_FILE)) {
       const defaultSettings = {
-        projectHomePath: process.cwd()
+        projectHomePath: process.cwd(),
+        recentPaths: []
       };
       fs.writeFileSync(SETTINGS_FILE, JSON.stringify(defaultSettings, null, 2));
       return defaultSettings;
@@ -23,7 +24,7 @@ function loadSettings() {
     return JSON.parse(data);
   } catch (error) {
     console.error('Error loading settings:', error);
-    return { projectHomePath: process.cwd() };
+    return { projectHomePath: process.cwd(), recentPaths: [] };
   }
 }
 
@@ -35,6 +36,27 @@ function saveSettings(settings) {
     console.error('Error saving settings:', error);
     return false;
   }
+}
+
+// 최근 경로 관리 함수
+function addToRecentPaths(settings, newPath) {
+  // recentPaths가 없으면 초기화
+  if (!settings.recentPaths) {
+    settings.recentPaths = [];
+  }
+  
+  // 이미 있는 경로면 제거 (중복 방지)
+  settings.recentPaths = settings.recentPaths.filter(path => path !== newPath);
+  
+  // 맨 앞에 추가
+  settings.recentPaths.unshift(newPath);
+  
+  // 최대 5개까지만 유지
+  if (settings.recentPaths.length > 5) {
+    settings.recentPaths = settings.recentPaths.slice(0, 5);
+  }
+  
+  return settings;
 }
 
 // Processing status (session manager handles queue now)
@@ -663,7 +685,13 @@ router.put('/settings/home-path', (req, res) => {
     }
 
     const settings = loadSettings();
+    const oldPath = settings.projectHomePath;
     settings.projectHomePath = projectHomePath;
+    
+    // 새로운 경로가 다르면 최근 경로에 추가
+    if (oldPath !== projectHomePath) {
+      addToRecentPaths(settings, projectHomePath);
+    }
     
     const saved = saveSettings(settings);
     if (!saved) {
@@ -687,6 +715,42 @@ router.put('/settings/home-path', (req, res) => {
     console.error('❌ Failed to update project home path:', error);
     res.status(500).json({
       error: `Failed to update project home path: ${error.message}`
+    });
+  }
+});
+
+// Tasks management endpoint
+// Get tasks.json from project home path
+router.get('/tasks', (req, res) => {
+  try {
+    const settings = loadSettings();
+    const projectHomePath = settings.projectHomePath;
+    const tasksFilePath = path.join(projectHomePath, 'docs', 'tasks.json');
+    
+    // Check if tasks.json exists
+    if (!fs.existsSync(tasksFilePath)) {
+      return res.status(404).json({
+        error: 'tasks.json not found in project docs directory',
+        path: tasksFilePath,
+        projectHomePath
+      });
+    }
+
+    // Read and parse tasks.json
+    const tasksData = fs.readFileSync(tasksFilePath, 'utf-8');
+    const parsedTasks = JSON.parse(tasksData);
+    
+    res.json({
+      success: true,
+      projectHomePath,
+      tasksFilePath,
+      ...parsedTasks
+    });
+  } catch (error) {
+    console.error('❌ Failed to load tasks:', error);
+    res.status(500).json({
+      error: `Failed to load tasks: ${error.message}`,
+      projectHomePath: loadSettings().projectHomePath
     });
   }
 });

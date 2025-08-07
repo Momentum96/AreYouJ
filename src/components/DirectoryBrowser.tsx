@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderIcon, ArrowUpIcon, CheckIcon } from 'lucide-react';
+import { FolderIcon, ArrowUpIcon, CheckIcon, ClockIcon } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -34,6 +34,7 @@ export function DirectoryBrowser({ isOpen, onClose, onSelect, initialPath }: Dir
   const [parentPath, setParentPath] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [recentPaths, setRecentPaths] = useState<string[]>([]);
 
   // Reset and fetch directories when dialog opens or path changes
   useEffect(() => {
@@ -41,8 +42,22 @@ export function DirectoryBrowser({ isOpen, onClose, onSelect, initialPath }: Dir
       const pathToUse = initialPath || '';
       setCurrentPath(pathToUse);
       fetchDirectories(pathToUse || undefined);
+      loadRecentPaths();
     }
   }, [isOpen, initialPath]);
+
+  // Load recent paths from settings
+  const loadRecentPaths = async () => {
+    try {
+      const response = await fetch('/api/settings');
+      if (response.ok) {
+        const data = await response.json();
+        setRecentPaths(data.settings.recentPaths || []);
+      }
+    } catch (err) {
+      console.error('Failed to load recent paths:', err);
+    }
+  };
 
   const fetchDirectories = async (path?: string) => {
     try {
@@ -84,6 +99,11 @@ export function DirectoryBrowser({ isOpen, onClose, onSelect, initialPath }: Dir
 
   const handleSelect = () => {
     onSelect(currentPath);
+    onClose();
+  };
+
+  const handleSelectRecentPath = (path: string) => {
+    onSelect(path);
     onClose();
   };
 
@@ -143,6 +163,34 @@ export function DirectoryBrowser({ isOpen, onClose, onSelect, initialPath }: Dir
               </div>
             )}
           </div>
+
+          {/* Recent Paths Section */}
+          {recentPaths.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                <ClockIcon className="w-4 h-4" />
+                <span>최근 사용한 경로</span>
+              </div>
+              <div className="border rounded-lg p-2 bg-muted/20">
+                {recentPaths.filter(path => path !== currentPath).map((path, index) => (
+                  <button
+                    key={path}
+                    onClick={() => handleSelectRecentPath(path)}
+                    className="flex items-center space-x-2 w-full p-2 text-left hover:bg-muted rounded text-sm transition-colors break-words"
+                    title={path}
+                  >
+                    <FolderIcon className="w-4 h-4 text-green-400 flex-shrink-0" />
+                    <span className="break-all text-xs font-mono">{path}</span>
+                  </button>
+                ))}
+                {recentPaths.filter(path => path !== currentPath).length === 0 && (
+                  <div className="text-center text-muted-foreground text-xs py-2">
+                    현재 경로와 동일한 최근 경로입니다.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Footer */}
           <div className="flex items-center justify-between pt-4 border-t">

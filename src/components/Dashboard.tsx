@@ -8,9 +8,10 @@ import { TaskTable } from "./TaskTable";
 interface DashboardProps {
   tasks: Task[];
   appName: string;
+  isLoadingTasks?: boolean;
 }
 
-export const Dashboard = ({ tasks, appName }: DashboardProps) => {
+export const Dashboard = ({ tasks, appName, isLoadingTasks = false }: DashboardProps) => {
   const {
     searchTerm,
     setSearchTerm,
@@ -41,7 +42,7 @@ export const Dashboard = ({ tasks, appName }: DashboardProps) => {
         totalTasks={tasks.length}
         filteredCount={filteredTasks.length}
       />
-      <TaskTable tasks={filteredTasks} />
+      <TaskTable tasks={filteredTasks} isLoading={isLoadingTasks} />
     </div>
   );
 };

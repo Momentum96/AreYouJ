@@ -11,9 +11,11 @@ import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import type { SubTask, Task } from '../types/task';
 import { TaskDetailsModal } from './TaskDetailsModal';
+import { CircularProgress } from '@/components/ui/circular-progress';
 
 interface TaskTableProps {
   tasks: Task[];
+  isLoading?: boolean;
 }
 
 // 상태를 표시하는 뱃지 컴포넌트
@@ -97,7 +99,7 @@ const SubTaskRow = ({ subtask, onShowDetails }: { subtask: SubTask; onShowDetail
   </ContextMenu>
 );
 
-export const TaskTable = ({ tasks }: TaskTableProps) => {
+export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [selectedTask, setSelectedTask] = useState<Task | SubTask | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -137,7 +139,17 @@ export const TaskTable = ({ tasks }: TaskTableProps) => {
 
         {/* 바디 */}
         <div>
-          {tasks.map((task) => {
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-16 space-y-4">
+              <CircularProgress size="large" />
+              <p className="text-sm text-muted-foreground">프로젝트 경로 변경 중...</p>
+            </div>
+          ) : tasks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 space-y-2">
+              <p className="text-sm text-muted-foreground">작업이 없습니다.</p>
+            </div>
+          ) : (
+            tasks.map((task) => {
             const isExpanded = expandedTasks.has(task.id);
             const hasSubtasks = task.subtasks && task.subtasks.length > 0;
 
@@ -217,7 +229,7 @@ export const TaskTable = ({ tasks }: TaskTableProps) => {
                 )}
               </Collapsible>
             );
-          })}
+          }))}
         </div>
       </div>
 

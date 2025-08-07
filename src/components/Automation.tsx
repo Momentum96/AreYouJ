@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
-import { Plus, Play, Square, RotateCcw, Trash2, Wifi, WifiOff } from 'lucide-react';
+import { Play, Square, Trash2, Wifi, WifiOff } from 'lucide-react';
 import { apiClient, type QueueMessage, type QueueStatus } from '../utils/api';
 import { wsClient } from '../utils/websocket';
 import { ClaudeTerminalRenderer } from '../utils/claude-terminal.js';
@@ -12,6 +12,9 @@ export const Automation = () => {
   const [newMessage, setNewMessage] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isStartingSession, setIsStartingSession] = useState(false);
+  const [isStoppingSession, setIsStoppingSession] = useState(false);
+  const [isClearingQueue, setIsClearingQueue] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<QueueStatus | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
@@ -20,6 +23,7 @@ export const Automation = () => {
   // Claude Terminal Renderer (Claude-Autopilot style)
   const terminalRenderer = useRef<ClaudeTerminalRenderer>(new ClaudeTerminalRenderer());
   const terminalRef = useRef<HTMLDivElement>(null);
+  const terminalScrollRef = useRef<HTMLDivElement>(null);
 
   // Initialize terminal renderer
   useEffect(() => {
@@ -45,6 +49,13 @@ export const Automation = () => {
         if (message.data.initialOutput && message.data.initialOutput.hasOutput && terminalRef.current && terminalRenderer.current) {
           console.log('🖥️ Rendering initial Claude output:', message.data.initialOutput);
           terminalRenderer.current.renderOutput(message.data.initialOutput.currentScreen, terminalRef.current);
+          
+          // Auto-scroll to bottom after initial rendering
+          setTimeout(() => {
+            if (terminalScrollRef.current) {
+              terminalScrollRef.current.scrollTop = terminalScrollRef.current.scrollHeight;
+            }
+          }, 100);
         }
       }
     };
@@ -85,6 +96,11 @@ export const Automation = () => {
         // Render full Claude terminal output
         if (terminalRef.current && terminalRenderer.current) {
           terminalRenderer.current.renderOutput(message.data.output, terminalRef.current);
+          
+          // Auto-scroll to bottom after rendering
+          if (terminalScrollRef.current) {
+            terminalScrollRef.current.scrollTop = terminalScrollRef.current.scrollHeight;
+          }
         }
       }
     };
@@ -230,9 +246,9 @@ export const Automation = () => {
   };
 
   const clearQueue = async () => {
-    if (isLoading) return;
+    if (isClearingQueue) return;
     
-    setIsLoading(true);
+    setIsClearingQueue(true);
     try {
       await apiClient.clearQueue();
       if (!wsConnected) {
@@ -243,19 +259,29 @@ export const Automation = () => {
       console.error('Failed to clear queue:', error);
       setError('큐 비우기에 실패했습니다');
     } finally {
-      setIsLoading(false);
+      setIsClearingQueue(false);
     }
   };
 
   const startProcessing = async () => {
-    if (isLoading) return;
+    if (isStartingSession) return;
     
-    setIsLoading(true);
+    setIsStartingSession(true);
     
     // Claude-Autopilot style: Only start session, not processing
     if (!sessionReady) {
       
       try {
+        // 세션 시작 전 터미널 상태 메시지 표시
+        if (terminalRef.current) {
+          terminalRef.current.innerHTML = `
+            <div class="text-gray-500 text-xs flex items-center gap-2">
+              <span class="animate-pulse text-blue-400">●</span>
+              Claude 세션을 시작하는 중...
+            </div>
+          `;
+        }
+        
         // Start session only (not processing)
         const response = await fetch('http://localhost:5001/api/session/start', {
           method: 'POST',
@@ -276,20 +302,46 @@ export const Automation = () => {
       } catch (error) {
         console.error('Failed to start Claude session:', error);
         setError('Claude 세션 시작에 실패했습니다');
+        
+        // 오류 시 초기 대기 메시지로 복원
+        if (terminalRef.current) {
+          terminalRef.current.innerHTML = `
+            <div class="text-gray-500 text-xs flex items-center gap-2">
+              <span class="animate-pulse">●</span>
+              실시간 Claude 터미널 출력 대기 중...
+            </div>
+          `;
+        }
       }
     }
     
-    setIsLoading(false);
+    setIsStartingSession(false);
   };
 
   const stopClaudeSession = async () => {
-    if (isLoading) return;
+    if (isStoppingSession) return;
     
-    setIsLoading(true);
+    setIsStoppingSession(true);
     try {
       await apiClient.stopClaudeSession();
       setSessionReady(false);
       setIsProcessing(false);
+      
+      // 터미널 클리어 및 세션 종료 메시지 표시
+      if (terminalRef.current && terminalRenderer.current) {
+        terminalRenderer.current.clear(terminalRef.current);
+        // 세션 종료 메시지를 터미널에 표시
+        setTimeout(() => {
+          if (terminalRef.current) {
+            terminalRef.current.innerHTML = `
+              <div class="text-gray-500 text-xs flex items-center gap-2">
+                <span class="text-red-400">●</span>
+                Claude 세션이 종료되었습니다. 세션 시작 버튼을 눌러 다시 연결하세요.
+              </div>
+            `;
+          }
+        }, 100);
+      }
       
       // 상태 업데이트가 WebSocket을 통해 자동으로 처리됨
       if (!wsConnected) {
@@ -300,7 +352,7 @@ export const Automation = () => {
       console.error('Failed to stop Claude session:', error);
       setError('Claude 세션 종료에 실패했습니다');
     } finally {
-      setIsLoading(false);
+      setIsStoppingSession(false);
     }
   };
 
@@ -407,175 +459,182 @@ export const Automation = () => {
         </Card>
       </div>
 
-      {/* Main Content Section - This uses flex-1 like TaskTable */}
-      <div className="flex-1 overflow-auto grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Left Panel: Queue Management & Controls */}
-        <div className="flex flex-col gap-4 h-fit lg:h-full">
-          {/* Message Queue */}
-          <Card className="flex flex-col overflow-hidden flex-1">
-            <div className="p-4 border-b border-border flex-shrink-0">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">메시지 큐</h2>
-                <Badge variant="outline" className="text-xs">
-                  {messages.length}개
-                </Badge>
-              </div>
+      {/* Main Content Section - Dashboard's TaskTable position */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
+        {/* Left Panel: Message Queue (단독) */}
+        <Card className="flex flex-col overflow-hidden min-h-0">
+          <div className="p-4 border-b border-border flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">메시지 큐</h2>
+              <Badge variant="outline" className="text-xs">
+                {messages.length}개
+              </Badge>
             </div>
-            
-            {/* Add Message */}
-            <div className="p-4 border-b border-border flex-shrink-0">
-              <div className="flex gap-2">
-                <textarea
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="Claude에게 보낼 메시지를 입력하세요..."
-                  className="flex-1 h-20 p-3 bg-background border border-border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                      addMessage();
-                    }
-                  }}
-                />
-                <Button onClick={addMessage} disabled={!newMessage.trim() || isLoading} size="sm" className="self-start">
-                  <Plus className="w-4 h-4" />
-                  <span className="hidden sm:inline ml-1">{isLoading ? '추가중...' : '추가'}</span>
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2 hidden sm:block">
-                Ctrl/Cmd + Enter로 빠르게 추가
-              </p>
-            </div>
-            
-            {/* Message List */}
-            <div className="flex-1 overflow-auto">
-              {messages.length === 0 ? (
-                <div className="flex items-center justify-center h-32 text-muted-foreground">
-                  <div className="text-center">
-                    <div className="text-4xl mb-2">📝</div>
-                    <p className="text-sm">메시지를 추가해보세요</p>
-                  </div>
+          </div>
+          
+          {/* Add Message */}
+          <div className="p-4 border-b border-border flex-shrink-0">
+            <textarea
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="Claude에게 보낼 메시지를 입력하세요..."
+              className="w-full h-20 p-3 bg-background border border-border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  addMessage();
+                }
+              }}
+            />
+            <p className="text-xs text-muted-foreground mt-2">
+              Ctrl/Cmd + Enter로 빠르게 추가
+            </p>
+          </div>
+          
+          {/* Message List */}
+          <div className="flex-1 overflow-auto">
+            {messages.length === 0 ? (
+              <div className="flex items-center justify-center h-32 text-muted-foreground">
+                <div className="text-center">
+                  <div className="text-4xl mb-2">📝</div>
+                  <p className="text-sm">메시지를 추가해보세요</p>
                 </div>
-              ) : (
-                <div className="p-4 space-y-3">
-                  {messages.map((message) => (
-                    <div key={message.id} className="group flex items-start gap-3 p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
-                      <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${getStatusColor(message.status)}`}></div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm break-words">{message.message}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant="secondary" className="text-xs">
-                            {getStatusText(message.status)}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground hidden sm:inline">
-                            {new Date(message.createdAt).toLocaleTimeString()}
-                          </span>
-                        </div>
+              </div>
+            ) : (
+              <div className="p-4 space-y-3">
+                {[...messages].reverse().map((message) => (
+                  <div key={message.id} className="group flex items-start gap-3 p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
+                    <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${getStatusColor(message.status)}`}></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm break-words">{message.message}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="secondary" className="text-xs">
+                          {getStatusText(message.status)}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground hidden sm:inline">
+                          {new Date(message.createdAt).toLocaleTimeString()}
+                        </span>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeMessage(message.id)}
-                        disabled={isLoading}
-                        className="opacity-60 group-hover:opacity-100 hover:text-red-500 transition-all disabled:opacity-30 flex-shrink-0"
-                        title="메시지 삭제"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </Card>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeMessage(message.id)}
+                      disabled={isLoading}
+                      className="opacity-60 group-hover:opacity-100 hover:text-red-500 transition-all disabled:opacity-30 flex-shrink-0"
+                      title="메시지 삭제"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Card>
 
+        {/* Right Panel: Control Panel + Terminal Output */}
+        <div className="flex flex-col gap-4 min-h-0">
           {/* Control Panel */}
-          <Card className="flex flex-col">
+          <Card className="flex flex-col flex-shrink-0">
             <div className="p-4 border-b border-border flex-shrink-0">
               <h2 className="text-lg font-semibold">제어판</h2>
             </div>
             <div className="p-4">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <Button
                   onClick={startProcessing}
-                  disabled={sessionReady || isLoading}
+                  disabled={sessionReady || isStartingSession}
                   className="flex items-center justify-center gap-2 text-sm"
                   variant={sessionReady ? "secondary" : "default"}
                 >
                   <Play className="w-4 h-4" />
-                  <span className="hidden sm:inline">{isLoading ? '시작중...' : sessionReady ? '세션 실행중' : '세션 시작'}</span>
+                  <span className="hidden sm:inline">{isStartingSession ? '시작중...' : sessionReady ? '세션 실행중' : '세션 시작'}</span>
                   <span className="sm:hidden">{sessionReady ? '실행중' : '시작'}</span>
                 </Button>
                 <Button
                   onClick={stopClaudeSession}
-                  disabled={!sessionReady || isLoading}
+                  disabled={!sessionReady || isStoppingSession}
                   variant="destructive"
                   className="flex items-center justify-center gap-2 text-sm"
                 >
                   <Square className="w-4 h-4" />
-                  <span className="hidden sm:inline">{isLoading ? '세션 종료중...' : '세션 종료'}</span>
+                  <span className="hidden sm:inline">{isStoppingSession ? '종료중...' : '세션 종료'}</span>
                   <span className="sm:hidden">종료</span>
+                </Button>
+                <Button
+                  onClick={clearQueue}
+                  variant="outline"
+                  disabled={messages.length === 0 || isClearingQueue}
+                  className="flex items-center justify-center gap-2 text-sm"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">{isClearingQueue ? '비우는중...' : '큐 비우기'}</span>
+                  <span className="sm:hidden">비우기</span>
                 </Button>
               </div>
             </div>
           </Card>
-        </div>
 
-        {/* Right Panel: Terminal Output */}
-        <Card className="flex flex-col overflow-hidden h-fit lg:h-full">
-          <div className="p-4 border-b border-border flex-shrink-0">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">실시간 출력</h2>
-              <div className="flex items-center gap-2 text-sm">
-                <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
-                <span className="text-muted-foreground text-xs hidden sm:inline">
-                  {wsConnected ? '연결됨' : '연결 끊김'}
-                </span>
-                <span className={`w-2 h-2 rounded-full ${sessionReady ? 'bg-blue-500 animate-pulse' : 'bg-yellow-500'}`}></span>
-                <span className="text-muted-foreground text-xs hidden sm:inline">
-                  {sessionReady ? 'Claude 준비됨' : 'Claude 시작 중...'}
-                </span>
+          {/* Terminal Output */}
+          <Card className="flex flex-col overflow-hidden flex-1 min-h-0">
+            <div className="p-4 border-b border-border flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">실시간 출력</h2>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
+                  <span className="text-muted-foreground text-xs hidden sm:inline">
+                    {wsConnected ? '연결됨' : '연결 끊김'}
+                  </span>
+                  <span className={`w-2 h-2 rounded-full ${sessionReady ? 'bg-blue-500 animate-pulse' : 'bg-yellow-500'}`}></span>
+                  <span className="text-muted-foreground text-xs hidden sm:inline">
+                    {sessionReady ? 'Claude 준비됨' : 'Claude 시작 중...'}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-          
-          {/* Terminal */}
-          <div className="flex-1 overflow-hidden p-4">
-            <div className="bg-black/95 text-green-400 font-mono text-sm rounded-lg border border-gray-700 flex flex-col h-full overflow-hidden">
-              {/* Terminal header */}
-              <div className="flex items-center justify-between px-4 py-2 bg-gray-800/50 border-b border-gray-600 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="flex gap-1">
-                    <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                    <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
+            
+            {/* Terminal */}
+            <div className="flex-1 p-4 min-h-0">
+              <div className="bg-black/95 text-green-400 font-mono text-sm rounded-lg border border-gray-700 flex flex-col h-full">
+                {/* Terminal header */}
+                <div className="flex items-center justify-between px-4 py-2 bg-gray-800/50 border-b border-gray-600 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-1">
+                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                      <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                      <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                    </div>
+                    <span className="text-gray-400 text-xs ml-2">Claude Terminal</span>
                   </div>
-                  <span className="text-gray-400 text-xs ml-2">Claude Terminal</span>
+                  <div className="text-gray-500 text-xs hidden sm:block">
+                    {new Date().toLocaleTimeString()}
+                  </div>
                 </div>
-                <div className="text-gray-500 text-xs hidden sm:block">
-                  {new Date().toLocaleTimeString()}
-                </div>
-              </div>
-              
-              {/* Terminal content */}
-              <div className="flex-1 overflow-auto">
+                
+                {/* Terminal content - This is where scroll should happen */}
                 <div 
-                  ref={terminalRef}
-                  className="p-4 min-h-full text-sm font-mono text-green-400"
-                  style={{
-                    backgroundColor: 'transparent',
-                    fontFamily: 'Monaco, "Lucida Console", monospace'
-                  }}
+                  ref={terminalScrollRef}
+                  className="flex-1 overflow-auto"
                 >
-                  {/* Default message when no output */}
-                  <div className="text-gray-500 text-xs flex items-center gap-2">
-                    <span className="animate-pulse">●</span>
-                    실시간 Claude 터미널 출력 대기 중...
+                  <div 
+                    ref={terminalRef}
+                    className="p-4 text-sm font-mono text-green-400"
+                    style={{
+                      backgroundColor: 'transparent',
+                      fontFamily: 'Monaco, "Lucida Console", monospace'
+                    }}
+                  >
+                    {/* Default message when no output */}
+                    <div className="text-gray-500 text-xs flex items-center gap-2">
+                      <span className="animate-pulse">●</span>
+                      실시간 Claude 터미널 출력 대기 중...
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        </div>
       </div>
     </div>
   );

@@ -78,7 +78,7 @@ export const TaskFilter = ({
       <CardContent className="">
         {/* 검색바와 기본 컨트롤 */}
         <div className="flex items-center gap-4 mb-3">
-          <div className="flex-1 relative">
+          <div className="flex-1 relative pt-2">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"

@@ -11,8 +11,10 @@ Modern task management dashboard with direct Claude CLI integration. Track tasks
 ### Prerequisites
 
 - **Node.js** 18+ 
-- **Claude CLI** installed and configured (`npm install -g @anthropic-ai/claude-cli`)
+- **Claude Code** installed and configured (`npm install -g @anthropic-ai/claude-code`)
 - **Python 3.7+** (for PTY wrapper)
+
+> **Windows Users**: See [WINDOWS_SETUP.md](./WINDOWS_SETUP.md) for WSL-based installation guide
 
 ### Installation & Launch
 
@@ -229,19 +231,20 @@ WEBSOCKET_HEARTBEAT_INTERVAL=30000
 
 ### Common Issues
 
-**Claude CLI not found**
+**Claude Code not found**
 ```bash
-# Install Claude CLI globally
-npm install -g @anthropic-ai/claude-cli
+# Install Claude Code globally
+npm install -g @anthropic-ai/claude-code
 
-# Or using pip
-pip install claude-cli
+# Verify installation
+claude --version
 ```
 
 **Python PTY errors on Windows**  
 - This tool requires Unix-like environment for PTY functionality
-- Use WSL (Windows Subsystem for Linux) on Windows
-- Or use Docker with Linux base image
+- **Solution**: Use WSL (Windows Subsystem for Linux) on Windows
+- **Detailed Guide**: See [WINDOWS_SETUP.md](./WINDOWS_SETUP.md) for complete setup instructions
+- Alternative: Use Docker with Linux base image
 
 **WebSocket connection failed**
 - Check if backend server is running on port 3001

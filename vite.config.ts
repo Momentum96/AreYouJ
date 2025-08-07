@@ -28,6 +28,12 @@ export default defineConfig({
         '**/node_modules/**',
         '**/.git/**'
       ]
+    },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      },
     }
   }
 })

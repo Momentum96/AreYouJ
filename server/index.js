@@ -5,6 +5,7 @@ import { WebSocketServer } from 'ws';
 import net from 'net';
 import apiRoutes from './routes/api.js';
 import { setupWebSocket } from './websocket/index.js';
+import { getClaudeSession } from './claude/session-manager.js';
 
 const app = express();
 const BASE_PORT = parseInt(process.env.PORT) || 5001;
@@ -100,13 +101,34 @@ async function startServer() {
       console.log('🛑 Press Ctrl+C to stop the server');
     });
     
-    // Graceful shutdown
+    // Graceful shutdown - remove existing listeners first to prevent duplicates
+    process.removeAllListeners('SIGINT');
+    process.removeAllListeners('SIGTERM');
+    
     const shutdown = () => {
       console.log('\n⏹️  Shutting down server...');
+      
+      // Get Claude session and stop it first
+      try {
+        const claudeSession = getClaudeSession();
+        if (claudeSession) {
+          console.log('🛑 Stopping Claude session...');
+          claudeSession.stop();
+        }
+      } catch (error) {
+        console.log('Warning: Error stopping Claude session:', error.message);
+      }
+      
       server.close(() => {
         console.log('✅ Server stopped');
         process.exit(0);
       });
+      
+      // Force exit after 5 seconds if server doesn't close gracefully
+      setTimeout(() => {
+        console.log('⚠️ Force exiting after 5 second timeout');
+        process.exit(1);
+      }, 5000);
     };
     
     process.on('SIGINT', shutdown);

@@ -10,6 +10,7 @@ const __dirname = path.dirname(__filename);
 // Queue persistence file path
 const QUEUE_DATA_DIR = path.join(__dirname, '../data');
 const QUEUE_FILE_PATH = path.join(QUEUE_DATA_DIR, 'queue.json');
+const SETTINGS_FILE_PATH = path.join(QUEUE_DATA_DIR, 'settings.json');
 
 export class ClaudeSessionManager extends EventEmitter {
   constructor() {
@@ -17,11 +18,14 @@ export class ClaudeSessionManager extends EventEmitter {
     this.pythonProcess = null;
     this.sessionReady = false;
     this.isStarting = false;
+    this.isStopping = false;
     this.messageQueue = []; // Message queue for auto-processing
     this.currentlyProcessing = null;
     this.lastActivity = Date.now();
     this.healthCheckInterval = null;
     this.currentScreenBuffer = '';
+    this.forceKillTimer = null;
+    this.lastStopTime = 0;
     
     // Debug logging
     this.debugLogFile = path.join(__dirname, '../logs/claude-debug.log');
@@ -175,9 +179,83 @@ export class ClaudeSessionManager extends EventEmitter {
 
   // Removed cleanAnsiSequences - we now preserve ANSI sequences for terminal rendering
 
+  async ensureCompleteCleanup() {
+    if (this.pythonProcess) {
+      this.log('⚠️ Found existing process during startup, cleaning up...');
+      await this.forceCleanup();
+    }
+    
+    // Clear any pending timers
+    if (this.forceKillTimer) {
+      clearTimeout(this.forceKillTimer);
+      this.forceKillTimer = null;
+    }
+    
+    // Reset all state
+    this.sessionReady = false;
+    this.isStopping = false;
+    this.currentlyProcessing = null;
+  }
+
+  async forceCleanup() {
+    return new Promise((resolve) => {
+      if (!this.pythonProcess) {
+        resolve();
+        return;
+      }
+
+      const cleanup = () => {
+        this.pythonProcess = null;
+        resolve();
+      };
+
+      if (this.pythonProcess.killed) {
+        cleanup();
+        return;
+      }
+
+      this.pythonProcess.removeAllListeners();
+      this.pythonProcess.on('exit', cleanup);
+
+      try {
+        this.pythonProcess.kill('SIGKILL');
+        this.log('🔪 Force killed existing process');
+      } catch (error) {
+        this.log(`Warning: Error force killing process: ${error.message}`);
+        cleanup();
+      }
+
+      // Fallback timeout
+      setTimeout(() => {
+        cleanup();
+      }, 2000);
+    });
+  }
+
+  loadSettings() {
+    try {
+      if (fs.existsSync(SETTINGS_FILE_PATH)) {
+        const data = fs.readFileSync(SETTINGS_FILE_PATH, 'utf-8');
+        return JSON.parse(data);
+      }
+    } catch (error) {
+      this.log(`Warning: Failed to load settings: ${error.message}`);
+    }
+    
+    // Default settings
+    return {
+      projectHomePath: process.cwd()
+    };
+  }
+
   async startSession(skipPermissions = true) {
     if (this.isStarting) {
       this.log('Session already starting...');
+      return false;
+    }
+
+    if (this.isStopping) {
+      this.log('Session is currently stopping, please wait...');
       return false;
     }
 
@@ -186,18 +264,35 @@ export class ClaudeSessionManager extends EventEmitter {
       return true;
     }
 
+    // Prevent rapid restart (wait at least 1 second after stop)
+    const timeSinceLastStop = Date.now() - this.lastStopTime;
+    if (timeSinceLastStop < 1000) {
+      this.log(`⏳ Waiting ${1000 - timeSinceLastStop}ms before restart to prevent conflicts...`);
+      await new Promise(resolve => setTimeout(resolve, 1000 - timeSinceLastStop));
+    }
+
+    // Ensure complete cleanup before starting
+    await this.ensureCompleteCleanup();
+
     this.isStarting = true;
     this.log('Starting Claude session...');
 
     try {
+      const settings = this.loadSettings();
+      const projectHomePath = settings.projectHomePath || process.cwd();
+      
       const wrapperPath = path.join(__dirname, 'claude_pty_wrapper.py');
       const args = ['python3', wrapperPath];
       
       if (skipPermissions) {
         args.push('--skip-permissions');
       }
+      
+      // Add working directory argument
+      args.push('--working-dir', projectHomePath);
 
       this.log(`Executing: ${args.join(' ')}`);
+      this.log(`Working directory: ${projectHomePath}`);
 
       // Spawn Python process (Claude-Autopilot style)
       this.pythonProcess = spawn(args[0], args.slice(1), {
@@ -365,6 +460,12 @@ export class ClaudeSessionManager extends EventEmitter {
   handleProcessExit(code, signal) {
     this.log(`Claude process exited with code ${code}, signal ${signal}`);
     
+    // Clear force kill timer since process has exited
+    if (this.forceKillTimer) {
+      clearTimeout(this.forceKillTimer);
+      this.forceKillTimer = null;
+    }
+    
     // Log additional debug information
     if (code !== 0) {
       this.log(`❌ Process exited with non-zero code: ${code}`);
@@ -381,9 +482,12 @@ export class ClaudeSessionManager extends EventEmitter {
       this.log(`⚠️ Process exited while processing message: ${this.currentlyProcessing.id}`);
     }
     
+    // Clean up state
     this.sessionReady = false;
     this.currentlyProcessing = null;
     this.pythonProcess = null;
+    this.isStarting = false;
+    this.isStopping = false;
     
     this.stopHealthCheck();
     this.emit('session-ended', { code, signal });
@@ -667,25 +771,33 @@ export class ClaudeSessionManager extends EventEmitter {
   }
 
   async stop() {
+    if (this.isStopping) {
+      this.log('Already stopping session...');
+      return;
+    }
+
+    this.isStopping = true;
     this.log('🛑 Stopping Claude session...');
     
-    if (this.pythonProcess) {
-      // Send exit command
+    if (this.pythonProcess && !this.pythonProcess.killed) {
       try {
+        // Try graceful exit first
         const exitCommand = { action: 'exit' };
         this.pythonProcess.stdin.write(JSON.stringify(exitCommand) + '\n');
         
-        // Wait for graceful exit
+        // Wait for graceful exit with shorter timeout
         await new Promise((resolve) => {
           const timeout = setTimeout(() => {
             this.log('⏰ Graceful exit timeout, forcing termination');
             resolve();
-          }, 5000);
+          }, 2000); // Reduced from 5000ms to 2000ms
 
-          this.pythonProcess.on('exit', () => {
+          const exitHandler = () => {
             clearTimeout(timeout);
             resolve();
-          });
+          };
+
+          this.pythonProcess.once('exit', exitHandler);
         });
       } catch (error) {
         this.log(`Warning: Error during graceful exit: ${error.message}`);
@@ -693,6 +805,8 @@ export class ClaudeSessionManager extends EventEmitter {
     }
 
     this.cleanup();
+    this.lastStopTime = Date.now();
+    this.isStopping = false;
     this.log('✅ Claude session stopped');
   }
 
@@ -848,23 +962,35 @@ export class ClaudeSessionManager extends EventEmitter {
     
     this.stopHealthCheck();
 
+    // Clear any existing force kill timer
+    if (this.forceKillTimer) {
+      clearTimeout(this.forceKillTimer);
+      this.forceKillTimer = null;
+    }
+
     if (this.pythonProcess) {
       try {
         if (!this.pythonProcess.killed) {
           this.pythonProcess.kill('SIGTERM');
           
-          // Force kill after 3 seconds if still alive
-          setTimeout(() => {
+          // Store timer reference for cleanup
+          this.forceKillTimer = setTimeout(() => {
             if (this.pythonProcess && !this.pythonProcess.killed) {
               this.log('🔪 Force killing Claude process...');
-              this.pythonProcess.kill('SIGKILL');
+              try {
+                this.pythonProcess.kill('SIGKILL');
+              } catch (error) {
+                this.log(`Warning: Error force killing process: ${error.message}`);
+              }
             }
+            this.forceKillTimer = null;
           }, 3000);
         }
       } catch (error) {
         this.log(`Warning: Error during cleanup: ${error.message}`);
       } finally {
-        this.pythonProcess = null;
+        // Don't set pythonProcess to null immediately, let exit handler do it
+        // This prevents race conditions with the force kill timer
       }
     }
   }

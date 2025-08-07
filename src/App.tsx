@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import { Dashboard } from "./components/Dashboard";
 import { Automation } from "./components/Automation";
+import { ProjectHomePathSetting } from "./components/ProjectHomePathSetting";
 import type { Task } from "./types/task";
 
 type NavigationTab = 'dashboard' | 'automation';
@@ -106,6 +107,9 @@ function App() {
                 🤖 Automation
               </button>
             </nav>
+          </div>
+          <div className="flex items-center">
+            <ProjectHomePathSetting />
           </div>
         </div>
       </div>

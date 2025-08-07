@@ -37,6 +37,9 @@ export const Automation = () => {
     loadQueue();
     loadStatus();
     
+    // Check current session status when component mounts
+    checkSessionStatus();
+    
     // Set up WebSocket event handlers first
     const handleConnection = (message) => {
       setWsConnected(message.data.status === 'connected');
@@ -57,6 +60,18 @@ export const Automation = () => {
               terminalScrollRef.current.scrollTop = terminalScrollRef.current.scrollHeight;
             }
           }, 100);
+        } else if (message.data.claudeSession && message.data.claudeSession.sessionReady) {
+          // Session is ready but no initial output, check current state only if no real content
+          if (terminalRef.current) {
+            const currentContent = terminalRef.current.innerHTML;
+            
+            // Only call checkSessionStatus if there's no real terminal content
+            if (!hasRealTerminalContent(currentContent)) {
+              checkSessionStatus();
+            }
+          } else {
+            checkSessionStatus();
+          }
         }
       }
     };
@@ -129,6 +144,18 @@ export const Automation = () => {
       // Real errors handled silently
     };
 
+    // Remove any existing handlers first to prevent duplicates
+    wsClient.off('connection', handleConnection);
+    wsClient.off('queue-update', handleQueueUpdate);
+    wsClient.off('status-update', handleStatusUpdate);
+    wsClient.off('processing-started', handleProcessingStarted);
+    wsClient.off('processing-stopped', handleProcessingStopped);
+    wsClient.off('session-status', handleSessionStatus);
+    wsClient.off('claude-output', handleClaudeOutput);
+    wsClient.off('message-status', handleMessageStatus);
+    wsClient.off('session-error', handleSessionError);
+    wsClient.off('process-error', handleProcessError);
+
     // Register event handlers
     wsClient.on('connection', handleConnection);
     wsClient.on('queue-update', handleQueueUpdate);
@@ -200,6 +227,69 @@ export const Automation = () => {
       console.error('Failed to load status:', error);
       setError('상태 정보를 불러올 수 없습니다');
     }
+  };
+
+  const checkSessionStatus = async () => {
+    try {
+      const response = await apiClient.getStatus();
+      const isSessionReady = response.claude?.sessionReady || false;
+      setSessionReady(isSessionReady);
+      
+      // Update terminal state based on session status only if there's no real terminal content
+      if (terminalRef.current) {
+        const currentContent = terminalRef.current.innerHTML;
+
+        // Only update terminal if there's no real content
+        if (!hasRealTerminalContent(currentContent)) {
+          if (isSessionReady) {
+            // Session is ready, show ready message
+            terminalRef.current.innerHTML = `
+              <div class="text-gray-500 text-xs flex items-center gap-2">
+                <span class="text-green-400 animate-pulse">●</span>
+                Claude 세션이 준비되었습니다. 메시지를 전송하세요.
+              </div>
+            `;
+          } else {
+            // Session not ready, show waiting message
+            terminalRef.current.innerHTML = `
+              <div class="text-gray-500 text-xs flex items-center gap-2">
+                <span class="animate-pulse">●</span>
+                실시간 Claude 터미널 출력 대기 중...
+              </div>
+            `;
+          }
+        }
+        // If there's real terminal content, don't touch it
+      }
+    } catch (error) {
+      console.error('Failed to check session status:', error);
+    }
+  };
+
+  // Helper function to check if terminal has real Claude content
+  const hasRealTerminalContent = (content: string) => {
+    if (!content || content.trim() === '') return false;
+    
+    // Status messages we want to replace
+    const statusMessages = ['대기 중...', '준비되었습니다', '종료되었습니다', '시작하는 중...'];
+    if (statusMessages.some(msg => content.includes(msg))) {
+      return false;
+    }
+    
+    // Real Claude terminal indicators
+    const realContentIndicators = [
+      'Welcome to Claude',
+      '/help',
+      'cwd:',
+      'Tips for getting started:',
+      '? for shortcuts',
+      'Run /init',
+      'Use Claude to help',
+      'Be as specific',
+      'Run /terminal-setup'
+    ];
+    
+    return realContentIndicators.some(indicator => content.includes(indicator));
   };
 
   const addMessage = async () => {
@@ -685,11 +775,7 @@ export const Automation = () => {
                       fontFamily: 'Monaco, "Lucida Console", monospace'
                     }}
                   >
-                    {/* Default message when no output */}
-                    <div className="text-gray-500 text-xs flex items-center gap-2">
-                      <span className="animate-pulse">●</span>
-                      실시간 Claude 터미널 출력 대기 중...
-                    </div>
+                    {/* Default message will be set by checkSessionStatus */}
                   </div>
                 </div>
               </div>

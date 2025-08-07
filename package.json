@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:server": "npm run cleanup && nodemon server/index.js",
-    "dev:full": "concurrently \"npm run dev\" \"npm run dev:server\"",
+    "dev:full": "concurrently --kill-others --kill-others-on-fail \"npm run dev\" \"npm run dev:server\"",
     "cleanup": "bash server/cleanup.sh",
     "start": "node server/index.js",
     "build": "tsc -b && vite build",

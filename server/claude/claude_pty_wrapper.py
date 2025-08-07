@@ -26,8 +26,24 @@ def main():
     # Parse command line arguments
     skip_permissions = '--skip-permissions' in sys.argv
     
+    # Parse working directory argument
+    working_directory = None
+    for i, arg in enumerate(sys.argv):
+        if arg == '--working-dir' and i + 1 < len(sys.argv):
+            working_directory = sys.argv[i + 1]
+            break
+    
+    # Set working directory if specified
+    if working_directory and os.path.exists(working_directory) and os.path.isdir(working_directory):
+        try:
+            os.chdir(working_directory)
+            print(f"[PTY] Changed working directory to: {working_directory}", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[PTY] Warning: Failed to change working directory: {e}", file=sys.stderr, flush=True)
+    
     print(f"[PTY] Starting Claude PTY wrapper...", file=sys.stderr, flush=True)
     print(f"[PTY] Skip permissions: {skip_permissions}", file=sys.stderr, flush=True)
+    print(f"[PTY] Current working directory: {os.getcwd()}", file=sys.stderr, flush=True)
     
     # Spawn Claude with a proper PTY
     master, slave = pty.openpty()

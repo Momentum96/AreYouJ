@@ -4,7 +4,38 @@ import path from 'path';
 import { broadcastToClients } from '../websocket/index.js';
 import { getClaudeSession } from '../claude/session-manager.js';
 
+const __dirname = path.dirname(new URL(import.meta.url).pathname);
+const SETTINGS_FILE = path.join(__dirname, '../data/settings.json');
+
 const router = express.Router();
+
+// Settings management functions
+function loadSettings() {
+  try {
+    if (!fs.existsSync(SETTINGS_FILE)) {
+      const defaultSettings = {
+        projectHomePath: process.cwd()
+      };
+      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(defaultSettings, null, 2));
+      return defaultSettings;
+    }
+    const data = fs.readFileSync(SETTINGS_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.error('Error loading settings:', error);
+    return { projectHomePath: process.cwd() };
+  }
+}
+
+function saveSettings(settings) {
+  try {
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    return true;
+  } catch (error) {
+    console.error('Error saving settings:', error);
+    return false;
+  }
+}
 
 // Processing status (session manager handles queue now)
 let processingStatus = {
@@ -584,6 +615,126 @@ router.post('/claude/keypress', (req, res) => {
     console.error('❌ Failed to send keypress:', error);
     res.status(500).json({
       error: `Failed to send keypress: ${error.message}`
+    });
+  }
+});
+
+// Settings management endpoints
+// Get settings
+router.get('/settings', (req, res) => {
+  try {
+    const settings = loadSettings();
+    res.json({
+      success: true,
+      settings
+    });
+  } catch (error) {
+    console.error('❌ Failed to get settings:', error);
+    res.status(500).json({
+      error: `Failed to get settings: ${error.message}`
+    });
+  }
+});
+
+// Update project home path
+router.put('/settings/home-path', (req, res) => {
+  try {
+    const { projectHomePath } = req.body;
+    
+    if (!projectHomePath || typeof projectHomePath !== 'string') {
+      return res.status(400).json({
+        error: 'projectHomePath is required and must be a string'
+      });
+    }
+
+    // Validate path exists
+    if (!fs.existsSync(projectHomePath)) {
+      return res.status(400).json({
+        error: 'The specified path does not exist'
+      });
+    }
+
+    // Check if path is a directory
+    const stats = fs.statSync(projectHomePath);
+    if (!stats.isDirectory()) {
+      return res.status(400).json({
+        error: 'The specified path is not a directory'
+      });
+    }
+
+    const settings = loadSettings();
+    settings.projectHomePath = projectHomePath;
+    
+    const saved = saveSettings(settings);
+    if (!saved) {
+      return res.status(500).json({
+        error: 'Failed to save settings'
+      });
+    }
+
+    // Broadcast settings update
+    broadcastToClients({
+      type: 'settings-update',
+      data: { settings }
+    });
+
+    res.json({
+      success: true,
+      message: 'Project home path updated successfully',
+      settings
+    });
+  } catch (error) {
+    console.error('❌ Failed to update project home path:', error);
+    res.status(500).json({
+      error: `Failed to update project home path: ${error.message}`
+    });
+  }
+});
+
+// Directory browser endpoints
+// List directories in a given path
+router.get('/directories', (req, res) => {
+  try {
+    const { path: requestedPath } = req.query;
+    const targetPath = requestedPath || process.env.HOME || process.cwd();
+    
+    if (!fs.existsSync(targetPath)) {
+      return res.status(400).json({
+        error: 'Path does not exist'
+      });
+    }
+
+    const stats = fs.statSync(targetPath);
+    if (!stats.isDirectory()) {
+      return res.status(400).json({
+        error: 'Path is not a directory'
+      });
+    }
+
+    const items = fs.readdirSync(targetPath, { withFileTypes: true });
+    const directories = items
+      .filter(item => item.isDirectory() && !item.name.startsWith('.'))
+      .map(item => ({
+        name: item.name,
+        path: path.join(targetPath, item.name)
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Add parent directory option if not at root
+    const parentPath = path.dirname(targetPath);
+    const canGoUp = parentPath !== targetPath;
+
+    res.json({
+      success: true,
+      currentPath: targetPath,
+      canGoUp,
+      parentPath: canGoUp ? parentPath : null,
+      directories
+    });
+  } catch (error) {
+    console.error('❌ Failed to list directories:', error);
+    res.status(500).json({
+      error: `Failed to list directories: ${error.message}`
     });
   }
 });

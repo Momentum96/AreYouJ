@@ -25,3 +25,5 @@ dist-ssr
 
 server/data/queues/*
 server/data/settings.json
+
+.claude

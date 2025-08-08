@@ -245,7 +245,11 @@ export const Automation = () => {
       wsClient.off('session-error', handleSessionError);
       wsClient.off('process-error', handleProcessError);
       wsClient.off('working-directory-changed', handleWorkingDirectoryChanged);
-      // Don't disconnect here to prevent React StrictMode issues
+      
+      // Note: WebSocket connection은 싱글톤으로 관리되므로 컴포넌트에서 직접 해제하지 않습니다.
+      // 다른 컴포넌트에서 사용 중일 수 있으므로, 이벤트 핸들러만 정리합니다.
+      // WebSocket 연결은 애플리케이션 수준에서 관리되어야 합니다.
+      console.log('🧹 Automation component cleanup completed - event handlers removed');
     };
   }, [checkSessionStatus]);
 
@@ -303,9 +307,27 @@ export const Automation = () => {
   };
 
   const addMessage = async () => {
+    // 입력 검증 강화
     if (!newMessage.trim() || isLoading) return;
     
     const messageText = newMessage.trim();
+    
+    // 메시지 길이 검증
+    if (messageText.length > 10000) {
+      setError('메시지는 10,000자를 초과할 수 없습니다.');
+      return;
+    }
+    
+    // 기본적인 XSS 방지 검증 - 단순하고 안전한 접근법
+    const dangerousTags = ['<script', '<iframe', '<object', '<embed', 'javascript:', 'data:text/html'];
+    const lowerMessage = messageText.toLowerCase();
+    const hasDangerousContent = dangerousTags.some(tag => lowerMessage.includes(tag));
+    
+    if (hasDangerousContent) {
+      setError('보안상 위험한 내용이 포함되어 있습니다.');
+      return;
+    }
+    
     setIsLoading(true);
     
     try {

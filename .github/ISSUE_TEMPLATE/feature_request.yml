@@ -1,0 +1,153 @@
+name: ✨ Feature Request
+description: Suggest a new feature or improvement for the AI Project Dashboard
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+assignees:
+  - Momentum96
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest a new feature! 🚀
+        
+        Your ideas help make the AI Project Dashboard better for everyone. Please provide as much detail as possible.
+
+  - type: textarea
+    id: feature-description
+    attributes:
+      label: Feature Description
+      description: A clear and concise description of the feature you'd like to see
+      placeholder: "I would like to see..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem-statement
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? What's the current pain point?
+      placeholder: "Currently, users face the issue of..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: Describe your ideal solution in detail
+      placeholder: |
+        The feature would work like this:
+        1. User does X
+        2. System responds with Y
+        3. Result is Z
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative Solutions
+      description: Have you considered any alternative approaches?
+      placeholder: "Other approaches I considered..."
+
+  - type: dropdown
+    id: component-area
+    attributes:
+      label: Component/Area
+      description: Which part of the application would this feature affect?
+      options:
+        - Dashboard (Task viewing/filtering)
+        - Automation (Claude integration)
+        - Task Management (Add/remove/edit tasks)
+        - WebSocket/Real-time features
+        - Project Settings/Configuration
+        - UI/UX Improvements
+        - API/Backend
+        - Performance/Optimization
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: user-type
+    attributes:
+      label: Primary User
+      description: Who would primarily benefit from this feature?
+      options:
+        - Individual developers
+        - Development teams
+        - Project managers
+        - All users
+        - System administrators
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority Level
+      description: How important is this feature to you?
+      options:
+        - High (Blocks current workflow)
+        - Medium (Would significantly improve workflow)
+        - Low (Nice to have)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: complexity
+    attributes:
+      label: Estimated Complexity
+      description: How complex do you think this feature might be to implement?
+      options:
+        - Simple (UI changes, small additions)
+        - Medium (New components, moderate logic)
+        - Complex (Major architecture changes)
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case Example
+      description: Provide a concrete example of how you would use this feature
+      placeholder: |
+        As a developer, I want to...
+        So that I can...
+        
+        Example workflow:
+        1. I open the dashboard
+        2. I click on...
+        3. The system shows me...
+    validations:
+      required: true
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Mockups/Wireframes
+      description: If you have any visual ideas, mockups, or reference examples, please share them
+      placeholder: "Link to mockups, reference apps, or describe the UI..."
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other context, screenshots, or examples that help explain the feature
+      placeholder: "Additional information..."
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      description: Please confirm the following
+      options:
+        - label: I have searched existing issues to make sure this feature hasn't been requested
+          required: true
+        - label: This feature aligns with the project's goals (AI-powered development dashboard)
+          required: true
+        - label: I am willing to provide feedback during development of this feature
+          required: false
+        - label: I would be interested in contributing to the implementation
+          required: false

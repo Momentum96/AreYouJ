@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import "./App.css";
 import { Dashboard } from "./components/Dashboard";
 import { Automation } from "./components/Automation";
 import { ProjectHomePathSetting } from "./components/ProjectHomePathSetting";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { Task } from "./types/task";
 
 type NavigationTab = 'dashboard' | 'automation';
@@ -14,62 +15,63 @@ function App() {
   const [projectPath, setProjectPath] = useState<string>('');
   const [isLoadingTasks, setIsLoadingTasks] = useState<boolean>(false);
 
+  // 레이스 컨디션 방지를 위한 ref들
+  const isRequestInProgressRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // 초기 데이터 로딩 및 주기적 업데이트 (레이스 컨디션 방지)
-  useEffect(() => {
-    let isRequestInProgress = false;
-    let abortController: AbortController | null = null;
+  // fetchTasks 함수를 컴포넌트 레벨로 이동하고 useCallback으로 최적화
+  const fetchTasks = useCallback(async (showLoading = false) => {
+    // 이미 요청이 진행 중이면 건너뛰기
+    if (isRequestInProgressRef.current) {
+      console.log('Skipping fetch - request already in progress');
+      return;
+    }
 
-    const fetchTasks = async (showLoading = false) => {
-      // 이미 요청이 진행 중이면 건너뛰기
-      if (isRequestInProgress) {
-        console.log('Skipping fetch - request already in progress');
+    try {
+      isRequestInProgressRef.current = true;
+      if (showLoading) setIsLoadingTasks(true);
+      
+      // 이전 요청이 있다면 취소
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+      
+      const response = await fetch("/api/tasks?t=" + new Date().getTime(), {
+        signal: abortControllerRef.current.signal
+      });
+      
+      if (!response.ok) {
+        throw new Error(
+          `태스크 데이터를 불러오는데 실패했습니다. (${response.status}: ${response.statusText})`
+        );
+      }
+      const data = await response.json();
+
+      setTasks(data.tasks || []);
+      setProjectPath(data.projectHomePath || '');
+      if (error) setError(null); // 성공 시 이전 에러 초기화
+    } catch (err) {
+      // AbortError는 무시 (정상적인 요청 취소)
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.log('Request aborted');
         return;
       }
+      
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "알 수 없는 오류가 발생했습니다.";
+      console.error("Tasks fetch error:", errorMessage);
+      setError(errorMessage);
+    } finally {
+      isRequestInProgressRef.current = false;
+      if (showLoading) setIsLoadingTasks(false);
+    }
+  }, [error]);
 
-      try {
-        isRequestInProgress = true;
-        if (showLoading) setIsLoadingTasks(true);
-        
-        // 이전 요청이 있다면 취소
-        if (abortController) {
-          abortController.abort();
-        }
-        abortController = new AbortController();
-        
-        const response = await fetch("/api/tasks?t=" + new Date().getTime(), {
-          signal: abortController.signal
-        });
-        
-        if (!response.ok) {
-          throw new Error(
-            `태스크 데이터를 불러오는데 실패했습니다. (${response.status}: ${response.statusText})`
-          );
-        }
-        const data = await response.json();
-
-        setTasks(data.tasks || []);
-        setProjectPath(data.projectHomePath || '');
-        if (error) setError(null); // 성공 시 이전 에러 초기화
-      } catch (err) {
-        // AbortError는 무시 (정상적인 요청 취소)
-        if (err instanceof Error && err.name === 'AbortError') {
-          console.log('Request aborted');
-          return;
-        }
-        
-        const errorMessage =
-          err instanceof Error
-            ? err.message
-            : "알 수 없는 오류가 발생했습니다.";
-        console.error("Tasks fetch error:", errorMessage);
-        setError(errorMessage);
-      } finally {
-        isRequestInProgress = false;
-        if (showLoading) setIsLoadingTasks(false);
-      }
-    };
-
+  // 초기 데이터 로딩 및 주기적 업데이트
+  useEffect(() => {
     // 즉시 실행
     fetchTasks();
 
@@ -78,11 +80,11 @@ function App() {
     
     return () => {
       clearInterval(intervalId);
-      if (abortController) {
-        abortController.abort();
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
       }
     };
-  }, [error]);
+  }, [fetchTasks]);
 
   // WebSocket을 통한 설정 변경 감지
   useEffect(() => {
@@ -100,31 +102,7 @@ function App() {
               console.log('Project path changed, refreshing tasks...');
               // 로딩 상태를 보여주면서 tasks를 새로고침
               setTimeout(() => {
-                const fetchTasksWithLoading = async () => {
-                  try {
-                    setIsLoadingTasks(true);
-                    const response = await fetch("/api/tasks?t=" + new Date().getTime());
-                    if (!response.ok) {
-                      throw new Error(
-                        `태스크 데이터를 불러오는데 실패했습니다. (${response.status}: ${response.statusText})`
-                      );
-                    }
-                    const data = await response.json();
-                    setTasks(data.tasks || []);
-                    setProjectPath(data.projectHomePath || '');
-                    if (error) setError(null);
-                  } catch (err) {
-                    const errorMessage =
-                      err instanceof Error
-                        ? err.message
-                        : "알 수 없는 오류가 발생했습니다.";
-                    console.error("Tasks refresh error:", errorMessage);
-                    setError(errorMessage);
-                  } finally {
-                    setIsLoadingTasks(false);
-                  }
-                };
-                fetchTasksWithLoading();
+                fetchTasks(true); // 기존 fetchTasks 함수 재사용
               }, 100);
             }
           }
@@ -178,7 +156,8 @@ function App() {
   };
 
   return (
-    <div className="dark w-full h-screen bg-background text-foreground overflow-hidden">
+    <ErrorBoundary>
+      <div className="dark w-full h-screen bg-background text-foreground overflow-hidden">
       {/* Navigation Bar */}
       <div className="w-full border-b border-border bg-card">
         <div className="flex items-center justify-between px-6 py-4">
@@ -230,7 +209,8 @@ function App() {
           {error}
         </div>
       )}
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
 

@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/context-menu';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { ChevronDown, Send, CheckCircle, AlertCircle } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { SubTask, Task } from '../types/task';
 import { TaskDetailsModal } from './TaskDetailsModal';
 import { CircularProgress } from '@/components/ui/circular-progress';
@@ -140,6 +140,19 @@ export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isAddingToQueue, setIsAddingToQueue] = useState<string | null>(null);
+  
+  // Notification timeout 관리를 위한 ref
+  const notificationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 컴포넌트 언마운트 시 timeout 정리
+  useEffect(() => {
+    return () => {
+      if (notificationTimeoutRef.current) {
+        clearTimeout(notificationTimeoutRef.current);
+        notificationTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const toggleTask = (taskId: string) => {
     const newExpanded = new Set(expandedTasks);
@@ -177,9 +190,15 @@ export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
         type: 'success'
       });
       
+      // 이전 timeout이 있다면 정리
+      if (notificationTimeoutRef.current) {
+        clearTimeout(notificationTimeoutRef.current);
+      }
+      
       // 3초 후 알림 자동 제거
-      setTimeout(() => {
+      notificationTimeoutRef.current = setTimeout(() => {
         setNotification(null);
+        notificationTimeoutRef.current = null;
       }, 3000);
       
     } catch (error) {
@@ -189,8 +208,14 @@ export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
         type: 'error'
       });
       
-      setTimeout(() => {
+      // 이전 timeout이 있다면 정리
+      if (notificationTimeoutRef.current) {
+        clearTimeout(notificationTimeoutRef.current);
+      }
+      
+      notificationTimeoutRef.current = setTimeout(() => {
         setNotification(null);
+        notificationTimeoutRef.current = null;
       }, 3000);
     } finally {
       setIsAddingToQueue(null);

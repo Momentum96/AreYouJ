@@ -38,8 +38,8 @@ export const StatsHeader = ({ stats, tasks, appName }: StatsHeaderProps) => {
     }
   };
 
-  return (
-    <Card className>
+    return (
+      <Card>
       <CardContent className="py-4 px-8">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-8">

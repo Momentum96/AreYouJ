@@ -16,7 +16,7 @@ interface TaskFilterProps {
   filters: FilterOptions;
   onToggleStatusFilter: (status: "pending" | "in-progress" | "done") => void;
   onTogglePriorityFilter: (priority: "low" | "medium" | "high") => void;
-  onUpdateFilter: (key: keyof FilterOptions, value: any) => void;
+  onUpdateFilter: (key: keyof FilterOptions, value: FilterOptions[keyof FilterOptions]) => void;
   onResetFilters: () => void;
   hasActiveFilters: boolean;
   totalTasks: number;

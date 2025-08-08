@@ -212,10 +212,10 @@ export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
         {/* 바디 */}
         <div>
           {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-16 space-y-4">
-              <CircularProgress size="large" />
-              <p className="text-sm text-muted-foreground">프로젝트 경로 변경 중...</p>
-            </div>
+              <div className="flex flex-col items-center justify-center py-16 space-y-4">
+                <CircularProgress value={0} size={64} showValue={false} />
+                <p className="text-sm text-muted-foreground">프로젝트 경로 변경 중...</p>
+              </div>
           ) : tasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 space-y-2">
               <p className="text-sm text-muted-foreground">작업이 없습니다.</p>

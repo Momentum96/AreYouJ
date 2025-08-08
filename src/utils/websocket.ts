@@ -1,6 +1,6 @@
 type WebSocketMessage = {
   type: string;
-  data?: any;
+  data?: unknown;
   timestamp?: string;
   message?: string;
 };
@@ -19,10 +19,13 @@ export class WebSocketClient {
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
   private pongTimeout: NodeJS.Timeout | null = null;
-  private messageQueue: Array<{type: string, data?: any}> = [];
+  private messageQueue: Array<{type: string, data?: unknown}> = [];
   private maxQueueSize = 100;
+  private url: string;
 
-  constructor(private url: string = 'ws://localhost:5001') {}
+  constructor(url: string = 'ws://localhost:5001') {
+    this.url = url;
+  }
 
   connect(): Promise<void> {
     if (this.isConnecting || (this.ws && this.ws.readyState === WebSocket.CONNECTING)) {
@@ -181,7 +184,7 @@ export class WebSocketClient {
     }
   }
 
-  private queueMessage(type: string, data?: any): void {
+  private queueMessage(type: string, data?: unknown): void {
     if (this.messageQueue.length >= this.maxQueueSize) {
       // Remove oldest message to make room
       this.messageQueue.shift();
@@ -219,11 +222,11 @@ export class WebSocketClient {
     }
   }
 
-  private emit(type: string, data: any): void {
+  private emit(type: string, data: unknown): void {
     this.handleMessage({ type, data });
   }
 
-  send(type: string, data?: any): boolean {
+  send(type: string, data?: unknown): boolean {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
         this.ws.send(JSON.stringify({ type, data }));

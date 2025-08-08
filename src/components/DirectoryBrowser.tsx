@@ -172,7 +172,7 @@ export function DirectoryBrowser({ isOpen, onClose, onSelect, initialPath }: Dir
                 <span>최근 사용한 경로</span>
               </div>
               <div className="border rounded-lg p-2 bg-muted/20">
-                {recentPaths.filter(path => path !== currentPath).map((path, index) => (
+                {recentPaths.filter(path => path !== currentPath).map((path) => (
                   <button
                     key={path}
                     onClick={() => handleSelectRecentPath(path)}

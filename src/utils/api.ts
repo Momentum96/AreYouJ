@@ -9,7 +9,7 @@ export interface QueueMessage {
   output?: string;
 }
 
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   message?: string;
   data?: T;
@@ -23,12 +23,16 @@ export interface QueueStatus {
     pending: number;
     processing: number;
     completed: number;
+    error?: number;
   };
   processing: {
     isProcessing: boolean;
     currentMessage: string | null;
     totalMessages: number;
     completedMessages: number;
+  };
+  claude?: {
+    sessionReady?: boolean;
   };
 }
 
@@ -99,7 +103,7 @@ export class ApiClient {
         // Last attempt failed
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 
-      } catch (error) {
+      } catch (error: unknown) {
         lastError = error instanceof Error ? error : new Error(String(error));
 
         // If this is the last attempt, throw the error
@@ -110,7 +114,7 @@ export class ApiClient {
         console.warn(`API request failed (attempt ${attempt + 1}/${maxRetries + 1}): ${lastError.message}`);
         
         // Only retry on network errors, not on HTTP errors that shouldn't be retried
-        if (error instanceof TypeError || error.name === 'AbortError') {
+        if (error instanceof TypeError || (error as Error).name === 'AbortError') {
           const delay = this.getRetryDelay(attempt);
           console.log(`네트워크 오류로 인해 ${Math.round(delay)}ms 후 재시도합니다...`);
           await new Promise(resolve => setTimeout(resolve, delay));
@@ -125,7 +129,7 @@ export class ApiClient {
     throw lastError!;
   }
 
-  private async request<T = any>(
+  private async request<T = unknown>(
     endpoint: string,
     options: RequestInit = {},
     customErrorMessage?: string

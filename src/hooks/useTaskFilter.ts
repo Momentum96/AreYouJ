@@ -86,7 +86,7 @@ export const useTaskFilter = (tasks: Task[]) => {
     }).filter(task => task !== null) as Task[];
   }, [tasks, searchTerm, filters]);
 
-  const updateFilter = (key: keyof FilterOptions, value: any) => {
+  const updateFilter = (key: keyof FilterOptions, value: FilterOptions[keyof FilterOptions]) => {
     setFilters(prev => ({
       ...prev,
       [key]: value

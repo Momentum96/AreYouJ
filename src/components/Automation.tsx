@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
@@ -10,7 +11,6 @@ import { ClaudeTerminalRenderer } from '../utils/claude-terminal.js';
 export const Automation = () => {
   const [messages, setMessages] = useState<QueueMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [isStoppingSession, setIsStoppingSession] = useState(false);
@@ -26,10 +26,47 @@ export const Automation = () => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const terminalScrollRef = useRef<HTMLDivElement>(null);
 
+  const checkSessionStatus = useCallback(async () => {
+    try {
+      const response = await apiClient.getStatus();
+      const isSessionReady = response.claude?.sessionReady || false;
+      setSessionStatus(isSessionReady ? 'ready' : 'idle');
+
+      // Update terminal state based on session status only if there's no real terminal content
+      if (terminalRef.current) {
+        const currentContent = terminalRef.current.innerHTML;
+
+        // Only update terminal if there's no real content
+        if (!hasRealTerminalContent(currentContent)) {
+          if (isSessionReady) {
+            // Session is ready, show ready message
+            terminalRef.current.innerHTML = `
+              <div class="text-gray-500 text-xs flex items-center gap-2">
+                <span class="text-green-400 animate-pulse">●</span>
+                Claude 세션이 준비되었습니다. 메시지를 전송하세요.
+              </div>
+            `;
+          } else {
+            // Session not ready, show neutral waiting message
+            terminalRef.current.innerHTML = `
+              <div class="text-gray-500 text-xs flex items-center gap-2">
+                <span class="text-gray-400">●</span>
+                Claude 터미널 대기 중...
+              </div>
+            `;
+          }
+        }
+        // If there's real terminal content, don't touch it
+      }
+    } catch (error) {
+      console.error('Failed to check session status:', error);
+    }
+  }, []);
+
   // Initialize terminal renderer
   useEffect(() => {
     terminalRenderer.current = new ClaudeTerminalRenderer();
-  }, []);
+  }, [checkSessionStatus]);
 
   // Initialize WebSocket connection and load initial data
   useEffect(() => {
@@ -41,7 +78,7 @@ export const Automation = () => {
     checkSessionStatus();
     
     // Set up WebSocket event handlers first
-    const handleConnection = (message) => {
+    const handleConnection = (message: any) => {
       setWsConnected(message.data.status === 'connected');
       if (message.data.status === 'connected') {
         // Check if Claude session info is available
@@ -76,16 +113,15 @@ export const Automation = () => {
       }
     };
 
-    const handleQueueUpdate = (message) => {
+    const handleQueueUpdate = (message: any) => {
       setMessages(message.data.messages);
     };
 
-    const handleStatusUpdate = (message) => {
+    const handleStatusUpdate = (message: any) => {
       setStatus(message.data);
-      setIsProcessing(message.data.processing.isProcessing);
     };
 
-    const handleProcessingStarted = (message) => {
+    const handleProcessingStarted = () => {
       // No UI feedback needed
     };
 
@@ -94,14 +130,14 @@ export const Automation = () => {
     };
 
     // New Claude session event handlers
-    const handleSessionStatus = (message) => {
-      const { status, sessionReady: ready, details } = message.data;
+    const handleSessionStatus = (message: any) => {
+      const { sessionReady: ready } = message.data;
       setSessionStatus(ready ? 'ready' : 'idle');
     };
 
     // Removed handleTerminalOutput - Claude-Autopilot style uses only claude-output event
 
-    const handleClaudeOutput = (message) => {
+    const handleClaudeOutput = (message: any) => {
       // Claude-Autopilot style output handling - render to actual terminal
       if (message.data.cleared) {
         // Output was cleared
@@ -121,15 +157,15 @@ export const Automation = () => {
       }
     };
 
-    const handleMessageStatus = (message) => {
-      // Message status changes handled silently  
+    const handleMessageStatus = () => {
+      // Message status changes handled silently
     };
 
-    const handleSessionError = (message) => {
+    const handleSessionError = () => {
       // Session errors handled silently
     };
 
-    const handleProcessError = (message) => {
+    const handleProcessError = (message: any) => {
       const errorData = message.data;
       
       // Claude PTY JSON 로그는 정상적인 시스템 메시지이므로 무시
@@ -145,7 +181,7 @@ export const Automation = () => {
     };
 
     // Handle working directory changes
-    const handleWorkingDirectoryChanged = (message) => {
+    const handleWorkingDirectoryChanged = () => {
       console.log('Working directory changed, refreshing queue...');
       // Reload queue for new working directory
       loadQueue();
@@ -211,7 +247,7 @@ export const Automation = () => {
       wsClient.off('working-directory-changed', handleWorkingDirectoryChanged);
       // Don't disconnect here to prevent React StrictMode issues
     };
-  }, []);
+  }, [checkSessionStatus]);
 
   // Removed handleTerminalOutputEvent - Claude-Autopilot style uses direct terminal rendering
 
@@ -232,7 +268,6 @@ export const Automation = () => {
     try {
       const response = await apiClient.getStatus();
       setStatus(response);
-      setIsProcessing(response.processing.isProcessing);
       setError(null);
     } catch (error) {
       console.error('Failed to load status:', error);
@@ -240,42 +275,6 @@ export const Automation = () => {
     }
   };
 
-  const checkSessionStatus = async () => {
-    try {
-      const response = await apiClient.getStatus();
-      const isSessionReady = response.claude?.sessionReady || false;
-      setSessionStatus(isSessionReady ? 'ready' : 'idle');
-      
-      // Update terminal state based on session status only if there's no real terminal content
-      if (terminalRef.current) {
-        const currentContent = terminalRef.current.innerHTML;
-
-        // Only update terminal if there's no real content
-        if (!hasRealTerminalContent(currentContent)) {
-          if (isSessionReady) {
-            // Session is ready, show ready message
-            terminalRef.current.innerHTML = `
-              <div class="text-gray-500 text-xs flex items-center gap-2">
-                <span class="text-green-400 animate-pulse">●</span>
-                Claude 세션이 준비되었습니다. 메시지를 전송하세요.
-              </div>
-            `;
-          } else {
-            // Session not ready, show neutral waiting message
-            terminalRef.current.innerHTML = `
-              <div class="text-gray-500 text-xs flex items-center gap-2">
-                <span class="text-gray-400">●</span>
-                Claude 터미널 대기 중...
-              </div>
-            `;
-          }
-        }
-        // If there's real terminal content, don't touch it
-      }
-    } catch (error) {
-      console.error('Failed to check session status:', error);
-    }
-  };
 
   // Helper function to check if terminal has real Claude content
   const hasRealTerminalContent = (content: string) => {
@@ -310,7 +309,7 @@ export const Automation = () => {
     setIsLoading(true);
     
     try {
-      const response = await apiClient.addMessage(messageText);
+      await apiClient.addMessage(messageText);
       setNewMessage('');
       
       // Claude-Autopilot style: Auto-processing handled automatically
@@ -431,7 +430,6 @@ export const Automation = () => {
     try {
       await apiClient.stopClaudeSession();
       setSessionStatus('idle');
-      setIsProcessing(false);
       
       // 터미널 클리어 및 세션 종료 메시지 표시
       if (terminalRef.current && terminalRenderer.current) {

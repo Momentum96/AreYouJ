@@ -231,6 +231,20 @@ export class WebSocketClient {
     return totalCount;
   }
 
+  // Get listener count for a specific event type
+  listenerCountForType(type: string): number {
+    const handlers = this.handlers.get(type);
+    return handlers ? handlers.length : 0;
+  }
+
+  // Check if there are any listeners for a specific event type
+  hasListeners(type?: string): boolean {
+    if (type) {
+      return this.listenerCountForType(type) > 0;
+    }
+    return this.listenerCount() > 0;
+  }
+
   private emit(type: string, data: unknown): void {
     this.handleMessage({ type, data });
   }

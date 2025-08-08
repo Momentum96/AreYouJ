@@ -197,9 +197,37 @@ function App() {
       {/* Content Area */}
       <div className="w-full h-[calc(100vh-73px)] overflow-hidden">
         {activeTab === 'dashboard' ? (
-          <Dashboard tasks={tasks} appName={__APP_NAME__} isLoadingTasks={isLoadingTasks} />
+          <ErrorBoundary fallback={
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center space-y-4">
+                <p className="text-muted-foreground">Dashboard에서 오류가 발생했습니다.</p>
+                <button 
+                  onClick={() => window.location.reload()} 
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md"
+                >
+                  새로고침
+                </button>
+              </div>
+            </div>
+          }>
+            <Dashboard tasks={tasks} appName={__APP_NAME__} isLoadingTasks={isLoadingTasks} />
+          </ErrorBoundary>
         ) : (
-          <Automation />
+          <ErrorBoundary fallback={
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center space-y-4">
+                <p className="text-muted-foreground">Automation에서 오류가 발생했습니다.</p>
+                <button 
+                  onClick={() => window.location.reload()} 
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md"
+                >
+                  새로고침
+                </button>
+              </div>
+            </div>
+          }>
+            <Automation />
+          </ErrorBoundary>
         )}
       </div>
 

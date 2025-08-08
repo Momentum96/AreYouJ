@@ -322,11 +322,41 @@ export class ApiClient {
   getConnectionInfo(): {
     baseUrl: string;
     retryConfig: RetryConfig;
+    timestamp: string;
   } {
     return {
       baseUrl: API_BASE_URL,
-      retryConfig: this.retryConfig
+      retryConfig: this.retryConfig,
+      timestamp: new Date().toISOString()
     };
+  }
+
+  // Health check with retry logic
+  async healthCheckWithRetry(): Promise<{ 
+    status: string; 
+    timestamp: string; 
+    service: string;
+    retryAttempts: number;
+  }> {
+    let retryAttempts = 0;
+    const maxRetries = 3;
+    
+    while (retryAttempts <= maxRetries) {
+      try {
+        const result = await this.healthCheck();
+        return { ...result, retryAttempts };
+      } catch (error) {
+        retryAttempts++;
+        if (retryAttempts > maxRetries) {
+          throw error;
+        }
+        // 짧은 딜레이 후 재시도
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryAttempts));
+      }
+    }
+    
+    // TypeScript를 위한 fallback (실제로는 도달하지 않음)
+    throw new ApiError('Health check failed after all retries', 500, 'server');
   }
 }
 

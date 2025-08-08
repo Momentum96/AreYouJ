@@ -222,6 +222,15 @@ export class WebSocketClient {
     }
   }
 
+  // Get total number of event listeners across all event types
+  listenerCount(): number {
+    let totalCount = 0;
+    for (const handlers of this.handlers.values()) {
+      totalCount += handlers.length;
+    }
+    return totalCount;
+  }
+
   private emit(type: string, data: unknown): void {
     this.handleMessage({ type, data });
   }

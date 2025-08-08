@@ -16,6 +16,50 @@ export interface ApiResponse<T = unknown> {
   error?: string;
 }
 
+// API Error types for better error handling
+export class ApiError extends Error {
+  public status: number;
+  public type: 'network' | 'server' | 'client' | 'timeout' | 'unknown';
+
+  constructor(
+    message: string,
+    status: number,
+    type: 'network' | 'server' | 'client' | 'timeout' | 'unknown' = 'unknown'
+  ) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.type = type;
+  }
+
+  static fromResponse(response: Response, message?: string): ApiError {
+    const status = response.status;
+    let type: ApiError['type'] = 'unknown';
+    
+    if (status >= 400 && status < 500) {
+      type = 'client';
+    } else if (status >= 500) {
+      type = 'server';
+    }
+
+    return new ApiError(
+      message || `HTTP ${status}: ${response.statusText}`,
+      status,
+      type
+    );
+  }
+
+  static fromNetworkError(error: Error): ApiError {
+    if (error.name === 'AbortError') {
+      return new ApiError('요청 시간이 초과되었습니다', 408, 'timeout');
+    }
+    if (error instanceof TypeError) {
+      return new ApiError('네트워크 연결에 실패했습니다', 0, 'network');
+    }
+    return new ApiError(error.message, 0, 'unknown');
+  }
+}
+
 export interface QueueStatus {
   status: string;
   queue: {
@@ -101,14 +145,19 @@ export class ApiClient {
         }
 
         // Last attempt failed
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw ApiError.fromResponse(response);
 
       } catch (error: unknown) {
         lastError = error instanceof Error ? error : new Error(String(error));
 
         // If this is the last attempt, throw the error
         if (attempt === maxRetries) {
-          throw new Error(`API 요청이 ${maxRetries + 1}번의 시도 후 실패했습니다: ${lastError.message}`);
+          const apiError = ApiError.fromNetworkError(lastError);
+          throw new ApiError(
+            `API 요청이 ${maxRetries + 1}번의 시도 후 실패했습니다: ${apiError.message}`,
+            apiError.status,
+            apiError.type
+          );
         }
 
         console.warn(`API request failed (attempt ${attempt + 1}/${maxRetries + 1}): ${lastError.message}`);
@@ -122,7 +171,7 @@ export class ApiClient {
         }
 
         // Non-retryable error
-        throw lastError;
+        throw ApiError.fromNetworkError(lastError);
       }
     }
 
@@ -151,16 +200,43 @@ export class ApiClient {
           // Could not parse error response as JSON
         }
         
-        throw new Error(errorMessage);
+        throw ApiError.fromResponse(response, errorMessage);
       }
       
       return await response.json();
     } catch (error) {
       const friendlyMessage = customErrorMessage || '요청 처리 중 오류가 발생했습니다';
-      const errorMsg = error instanceof Error ? error.message : '알 수 없는 오류';
       
+      if (error instanceof ApiError) {
+        console.error(`API request failed: ${endpoint}`, {
+          status: error.status,
+          type: error.type,
+          message: error.message
+        });
+        
+        // Provide more specific error messages based on error type
+        let specificMessage = friendlyMessage;
+        switch (error.type) {
+          case 'network':
+            specificMessage = '네트워크 연결을 확인해주세요';
+            break;
+          case 'timeout':
+            specificMessage = '서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요';
+            break;
+          case 'server':
+            specificMessage = '서버에 문제가 발생했습니다. 잠시 후 다시 시도해주세요';
+            break;
+          case 'client':
+            specificMessage = error.message; // Use the specific error message for client errors
+            break;
+        }
+        
+        throw new ApiError(`${specificMessage}`, error.status, error.type);
+      }
+      
+      const errorMsg = error instanceof Error ? error.message : '알 수 없는 오류';
       console.error(`API request failed: ${endpoint}`, error);
-      throw new Error(`${friendlyMessage}: ${errorMsg}`);
+      throw new ApiError(`${friendlyMessage}: ${errorMsg}`, 0, 'unknown');
     }
   }
 

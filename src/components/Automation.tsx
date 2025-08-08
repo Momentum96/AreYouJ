@@ -245,7 +245,13 @@ export const Automation = () => {
       wsClient.off('session-error', handleSessionError);
       wsClient.off('process-error', handleProcessError);
       wsClient.off('working-directory-changed', handleWorkingDirectoryChanged);
-      // Don't disconnect here to prevent React StrictMode issues
+      
+      // Properly disconnect WebSocket connection to prevent resource leaks
+      // Only disconnect if no other components are using the connection
+      if (wsClient.isConnected() && wsClient.listenerCount() === 0) {
+        wsClient.disconnect();
+        console.log('🔌 WebSocket disconnected on component unmount');
+      }
     };
   }, [checkSessionStatus]);
 
@@ -303,9 +309,23 @@ export const Automation = () => {
   };
 
   const addMessage = async () => {
+    // 입력 검증 강화
     if (!newMessage.trim() || isLoading) return;
     
     const messageText = newMessage.trim();
+    
+    // 메시지 길이 검증
+    if (messageText.length > 10000) {
+      setError('메시지는 10,000자를 초과할 수 없습니다.');
+      return;
+    }
+    
+    // 기본적인 XSS 방지 검증
+    if (/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi.test(messageText)) {
+      setError('스크립트 태그는 포함할 수 없습니다.');
+      return;
+    }
+    
     setIsLoading(true);
     
     try {

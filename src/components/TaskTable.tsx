@@ -20,44 +20,46 @@ interface TaskTableProps {
   isLoading?: boolean;
 }
 
+// 성능 최적화를 위해 상수를 컴포넌트 외부로 이동
+const STATUS_COLORS = {
+  pending: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+  'in-progress': 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+  done: 'bg-green-500/20 text-green-300 border-green-500/30',
+} as const;
+
+const STATUS_TEXT = {
+  pending: 'Pending',
+  'in-progress': 'In Progress',
+  done: 'Done'
+} as const;
+
 // 상태를 표시하는 뱃지 컴포넌트
 const StatusBadge = ({ status }: { status: 'pending' | 'in-progress' | 'done' }) => {
-  const colors = {
-    pending: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
-    'in-progress': 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
-    done: 'bg-green-500/20 text-green-300 border-green-500/30',
-  };
-
-  const text = {
-    pending: 'Pending',
-    'in-progress': 'In Progress',
-    done: 'Done'
-  }
 
   return (
-    <Badge variant="outline" className={`whitespace-nowrap ${colors[status]}`}>
-      {text[status]}
+    <Badge variant="outline" className={`whitespace-nowrap ${STATUS_COLORS[status]}`}>
+      {STATUS_TEXT[status]}
     </Badge>
   );
 };
 
+const PRIORITY_COLORS = {
+  low: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  medium: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+  high: 'bg-red-500/20 text-red-300 border-red-500/30',
+} as const;
+
+const PRIORITY_TEXT = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High'
+} as const;
+
 // 우선순위를 표시하는 뱃지 컴포넌트
 const PriorityBadge = ({ priority }: { priority: 'low' | 'medium' | 'high' }) => {
-  const colors = {
-    low: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-    medium: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
-    high: 'bg-red-500/20 text-red-300 border-red-500/30',
-  };
-  
-  const text = {
-    low: 'Low',
-    medium: 'Medium',
-    high: 'High'
-  }
-
   return (
-    <Badge variant="outline" className={`whitespace-nowrap ${colors[priority]}`}>
-      {text[priority]}
+    <Badge variant="outline" className={`whitespace-nowrap ${PRIORITY_COLORS[priority]}`}>
+      {PRIORITY_TEXT[priority]}
     </Badge>
   );
 };

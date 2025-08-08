@@ -15,13 +15,32 @@ function App() {
   const [isLoadingTasks, setIsLoadingTasks] = useState<boolean>(false);
 
 
-  // 초기 데이터 로딩 및 주기적 업데이트
+  // 초기 데이터 로딩 및 주기적 업데이트 (레이스 컨디션 방지)
   useEffect(() => {
+    let isRequestInProgress = false;
+    let abortController: AbortController | null = null;
+
     const fetchTasks = async (showLoading = false) => {
+      // 이미 요청이 진행 중이면 건너뛰기
+      if (isRequestInProgress) {
+        console.log('Skipping fetch - request already in progress');
+        return;
+      }
+
       try {
+        isRequestInProgress = true;
         if (showLoading) setIsLoadingTasks(true);
         
-        const response = await fetch("/api/tasks?t=" + new Date().getTime());
+        // 이전 요청이 있다면 취소
+        if (abortController) {
+          abortController.abort();
+        }
+        abortController = new AbortController();
+        
+        const response = await fetch("/api/tasks?t=" + new Date().getTime(), {
+          signal: abortController.signal
+        });
+        
         if (!response.ok) {
           throw new Error(
             `태스크 데이터를 불러오는데 실패했습니다. (${response.status}: ${response.statusText})`
@@ -33,6 +52,12 @@ function App() {
         setProjectPath(data.projectHomePath || '');
         if (error) setError(null); // 성공 시 이전 에러 초기화
       } catch (err) {
+        // AbortError는 무시 (정상적인 요청 취소)
+        if (err instanceof Error && err.name === 'AbortError') {
+          console.log('Request aborted');
+          return;
+        }
+        
         const errorMessage =
           err instanceof Error
             ? err.message
@@ -40,6 +65,7 @@ function App() {
         console.error("Tasks fetch error:", errorMessage);
         setError(errorMessage);
       } finally {
+        isRequestInProgress = false;
         if (showLoading) setIsLoadingTasks(false);
       }
     };
@@ -48,8 +74,14 @@ function App() {
     fetchTasks();
 
     // 5초마다 데이터 새로고침
-    const intervalId = setInterval(fetchTasks, 5000);
-    return () => clearInterval(intervalId);
+    const intervalId = setInterval(() => fetchTasks(), 5000);
+    
+    return () => {
+      clearInterval(intervalId);
+      if (abortController) {
+        abortController.abort();
+      }
+    };
   }, [error]);
 
   // WebSocket을 통한 설정 변경 감지

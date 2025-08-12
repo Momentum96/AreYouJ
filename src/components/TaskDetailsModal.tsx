@@ -67,19 +67,10 @@ const PriorityBadge = ({
   );
 };
 
-// ISO 날짜 문자열을 'YYYY-MM-DD HH:MM:SS' 형식으로 변환
+// 시간 문자열을 'YYYY-MM-DD HH:MM:SS' 형식으로 표시 (밀리초와 타임존 제거)
 const formatISODate = (isoString: string) => {
-  const date = new Date(isoString);
-  const pad = (num: number) => num.toString().padStart(2, "0");
-
-  const year = date.getUTCFullYear();
-  const month = pad(date.getUTCMonth() + 1);
-  const day = pad(date.getUTCDate());
-  const hours = pad(date.getUTCHours());
-  const minutes = pad(date.getUTCMinutes());
-  const seconds = pad(date.getUTCSeconds());
-
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  // 밀리초와 타임존 정보 제거
+  return isoString.replace(/\.\d{3}.*$/, '').replace('T', ' ').replace('Z', '');
 };
 
 // 마크다운 형태의 텍스트를 간단하게 렌더링하는 컴포넌트

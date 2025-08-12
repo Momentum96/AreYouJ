@@ -73,11 +73,13 @@ const SubTaskRow = ({
   subtask, 
   onShowDetails,
   onAddToQueue,
+  onDeleteSubtask,
   isAddingToQueue
 }: { 
   subtask: SubTask; 
   onShowDetails: (task: SubTask) => void;
   onAddToQueue: (taskId: string) => void;
+  onDeleteSubtask: (subtaskId: string, subtaskTitle: string) => void;
   isAddingToQueue: string | null;
 }) => (
   <ContextMenu>
@@ -130,6 +132,12 @@ const SubTaskRow = ({
     <ContextMenuContent>
       <ContextMenuItem onClick={() => onShowDetails(subtask)}>
         View Details
+      </ContextMenuItem>
+      <ContextMenuItem 
+        onClick={() => onDeleteSubtask(subtask.id, subtask.title)}
+        className="text-red-600 focus:text-red-600 focus:bg-red-50"
+      >
+        Remove Task
       </ContextMenuItem>
     </ContextMenuContent>
   </ContextMenu>
@@ -258,6 +266,69 @@ export const TaskTable = ({ tasks, isLoading = false, onTaskDeleted }: TaskTable
       console.error('Failed to delete task:', error);
       setNotification({
         message: 'Task 삭제에 실패했습니다.',
+        type: 'error'
+      });
+      
+      // 이전 timeout이 있다면 정리
+      if (notificationTimeoutRef.current) {
+        clearTimeout(notificationTimeoutRef.current);
+      }
+      
+      notificationTimeoutRef.current = setTimeout(() => {
+        setNotification(null);
+        notificationTimeoutRef.current = null;
+      }, 3000);
+    }
+  };
+
+  const deleteSubtask = async (subtaskId: string, subtaskTitle: string) => {
+    // 확인 대화상자
+    if (!window.confirm(`Subtask "${subtaskTitle}"를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) {
+      return;
+    }
+
+    try {
+      // 서브태스크가 속한 메인 태스크 ID를 찾아야 합니다
+      let parentTaskId: string | null = null;
+      for (const task of tasks) {
+        if (task.subtasks && task.subtasks.some(sub => sub.id === subtaskId)) {
+          parentTaskId = task.id;
+          break;
+        }
+      }
+
+      if (!parentTaskId) {
+        throw new Error('부모 태스크를 찾을 수 없습니다.');
+      }
+
+      await apiClient.deleteSubtask(parentTaskId, subtaskId);
+      
+      // 성공 알림 표시
+      setNotification({
+        message: `Subtask "${subtaskTitle}"가 삭제되었습니다.`,
+        type: 'success'
+      });
+      
+      // 이전 timeout이 있다면 정리
+      if (notificationTimeoutRef.current) {
+        clearTimeout(notificationTimeoutRef.current);
+      }
+      
+      // 3초 후 알림 자동 제거
+      notificationTimeoutRef.current = setTimeout(() => {
+        setNotification(null);
+        notificationTimeoutRef.current = null;
+      }, 3000);
+      
+      // 부모 컴포넌트에 삭제 완료 알림
+      if (onTaskDeleted) {
+        onTaskDeleted();
+      }
+      
+    } catch (error) {
+      console.error('Failed to delete subtask:', error);
+      setNotification({
+        message: 'Subtask 삭제에 실패했습니다.',
         type: 'error'
       });
       
@@ -402,6 +473,7 @@ export const TaskTable = ({ tasks, isLoading = false, onTaskDeleted }: TaskTable
                             subtask={subtask} 
                             onShowDetails={showTaskDetails}
                             onAddToQueue={addTaskToQueue}
+                            onDeleteSubtask={deleteSubtask}
                             isAddingToQueue={isAddingToQueue}
                           />
                         </div>

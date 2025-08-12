@@ -882,6 +882,78 @@ router.delete('/tasks/:id', (req, res) => {
   }
 });
 
+// Delete subtask by task ID and subtask ID
+router.delete('/tasks/:taskId/subtasks/:subtaskId', (req, res) => {
+  try {
+    const { taskId, subtaskId } = req.params;
+    const settings = loadSettings();
+    const projectHomePath = settings.projectHomePath;
+    const tasksFilePath = path.join(projectHomePath, 'docs', 'tasks.json');
+    
+    // Check if tasks.json exists
+    if (!fs.existsSync(tasksFilePath)) {
+      return res.status(404).json({
+        error: 'tasks.json not found in project docs directory',
+        path: tasksFilePath,
+        projectHomePath
+      });
+    }
+
+    // Read and parse tasks.json
+    const tasksData = fs.readFileSync(tasksFilePath, 'utf-8');
+    const parsedTasks = JSON.parse(tasksData);
+    
+    // Find parent task
+    const task = parsedTasks.tasks.find(task => task.id === taskId);
+    if (!task) {
+      return res.status(404).json({
+        error: `Task with ID '${taskId}' not found`,
+        availableIds: parsedTasks.tasks.map(task => task.id)
+      });
+    }
+    
+    // Check if task has subtasks
+    if (!task.subtasks || !Array.isArray(task.subtasks)) {
+      return res.status(404).json({
+        error: `Task '${taskId}' has no subtasks`
+      });
+    }
+    
+    // Find subtask index
+    const subtaskIndex = task.subtasks.findIndex(subtask => subtask.id === subtaskId);
+    if (subtaskIndex === -1) {
+      return res.status(404).json({
+        error: `Subtask with ID '${subtaskId}' not found in task '${taskId}'`,
+        availableSubtaskIds: task.subtasks.map(subtask => subtask.id)
+      });
+    }
+    
+    // Remove subtask from array
+    const deletedSubtask = task.subtasks.splice(subtaskIndex, 1)[0];
+    
+    // Write updated tasks back to file
+    fs.writeFileSync(tasksFilePath, JSON.stringify(parsedTasks, null, 2), 'utf-8');
+    
+    console.log(`✅ Successfully deleted subtask: ${deletedSubtask.title} (ID: ${subtaskId}) from task ${taskId}`);
+    
+    res.json({
+      success: true,
+      deletedSubtask: {
+        id: deletedSubtask.id,
+        title: deletedSubtask.title,
+        parentTaskId: taskId
+      },
+      remainingSubtasks: task.subtasks.length
+    });
+  } catch (error) {
+    console.error('❌ Failed to delete subtask:', error);
+    res.status(500).json({
+      error: `Failed to delete subtask: ${error.message}`,
+      projectHomePath: loadSettings().projectHomePath
+    });
+  }
+});
+
 // Directory browser endpoints
 // List directories in a given path
 router.get('/directories', (req, res) => {

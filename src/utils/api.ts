@@ -373,6 +373,24 @@ export class ApiClient {
       method: 'DELETE',
     }, `Task 삭제에 실패했습니다 (ID: ${taskId})`);
   }
+
+  // Delete subtask by task ID and subtask ID
+  async deleteSubtask(taskId: string, subtaskId: string): Promise<{
+    success: boolean;
+    deletedSubtask: { id: string; title: string; parentTaskId: string };
+    remainingSubtasks: number;
+  }> {
+    if (!taskId || typeof taskId !== 'string') {
+      throw new Error('Task ID를 입력해주세요');
+    }
+    if (!subtaskId || typeof subtaskId !== 'string') {
+      throw new Error('Subtask ID를 입력해주세요');
+    }
+
+    return this.request(`/tasks/${encodeURIComponent(taskId)}/subtasks/${encodeURIComponent(subtaskId)}`, {
+      method: 'DELETE',
+    }, `Subtask 삭제에 실패했습니다 (Task: ${taskId}, Subtask: ${subtaskId})`);
+  }
 }
 
 export const apiClient = new ApiClient();

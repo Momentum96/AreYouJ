@@ -442,9 +442,16 @@ export class ClaudeSessionManager extends EventEmitter {
       let lastOutputTime = Date.now();
       
       const readyPatterns = [
-        /\? for shortcuts/,
-        /Bypassing Permissions/,
-        />\s*$/
+        /\? for shortcuts/i,
+        /Bypassing Permissions/i,
+        /Welcome to Claude Code/i,
+        /claude/i,
+        /pwd:/i,
+        /cwd:/i,
+        /\u276F/,  // Unicode prompt character
+        /❯/,      // Alternative prompt character
+        />\s*$/,
+        /\$\s*$/
       ];
       
       let checkInterval = null;
@@ -467,14 +474,22 @@ export class ClaudeSessionManager extends EventEmitter {
           return pattern.test(jsonScreen) || pattern.test(screenBuffer);
         });
         
-        if (isReady && timeSinceLastOutput >= 1000) {
+        if (isReady && timeSinceLastOutput >= 500) {
           this.log(`✅ Claude session is ready for input`);
           if (checkInterval) clearInterval(checkInterval);
           resolve(true);
           return;
         }
         
-        this.debugLog(`Waiting for Claude ready... (${screenBuffer.length} chars in buffer)`);
+        // Alternative detection: if we have substantial output and no new output for 2 seconds
+        if (screenBuffer.length > 100 && timeSinceLastOutput >= 2000) {
+          this.log(`✅ Claude session is ready (detected by output stabilization)`);
+          if (checkInterval) clearInterval(checkInterval);
+          resolve(true);
+          return;
+        }
+        
+        this.debugLog(`Waiting for Claude ready... (${screenBuffer.length} chars in buffer, last output: ${timeSinceLastOutput}ms ago)`);
       };
       
       // Track output updates for timing during startup

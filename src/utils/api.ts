@@ -262,6 +262,21 @@ export class ApiClient {
     }, '메시지 추가에 실패했습니다');
   }
 
+  // Update message in queue
+  async updateMessage(id: string, message: string): Promise<ApiResponse> {
+    if (!id) {
+      throw new Error('수정할 메시지 ID가 필요합니다');
+    }
+    if (!message.trim()) {
+      throw new Error('메시지 내용을 입력해주세요');
+    }
+
+    return this.request(`/queue/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ message: message.trim() }),
+    }, '메시지 수정에 실패했습니다');
+  }
+
   // Delete message from queue
   async deleteMessage(id: string): Promise<ApiResponse> {
     if (!id) {

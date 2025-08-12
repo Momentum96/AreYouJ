@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
-import { Play, Square, Trash2, Wifi, WifiOff, ChevronUp, ChevronDown } from 'lucide-react';
+import { Play, Square, Trash2, Wifi, WifiOff, ChevronUp, ChevronDown, Edit, Save, X } from 'lucide-react';
 import { apiClient, type QueueMessage, type QueueStatus } from '../utils/api';
 import { wsClient } from '../utils/websocket';
 import { ClaudeTerminalRenderer } from '../utils/claude-terminal.js';
@@ -20,6 +20,10 @@ export const Automation = () => {
   const [, setStatus] = useState<QueueStatus | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<'idle' | 'starting' | 'ready' | 'error'>('idle');
+  
+  // 메시지 수정 관련 상태들
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
 
   // Claude Terminal Renderer (Claude-Autopilot style)
   const terminalRenderer = useRef<ClaudeTerminalRenderer>(new ClaudeTerminalRenderer());
@@ -399,6 +403,63 @@ export const Automation = () => {
     }
   };
 
+  // 메시지 수정 모드 시작
+  const startEditMessage = (message: QueueMessage) => {
+    if (editingMessageId) return; // 이미 다른 메시지를 편집 중이면 차단
+    
+    setEditingMessageId(message.id);
+    setEditingText(message.message);
+    setNewMessage(message.message); // textarea에 현재 메시지 내용 표시
+  };
+
+  // 메시지 수정 저장
+  const saveEditMessage = async () => {
+    if (!editingMessageId || isLoading) return;
+    
+    const messageText = newMessage.trim();
+    if (!messageText) {
+      setError('메시지 내용을 입력해주세요');
+      return;
+    }
+    
+    // 메시지가 변경되지 않았으면 편집 모드만 종료
+    if (messageText === editingText) {
+      setEditingMessageId(null);
+      setEditingText('');
+      setNewMessage('');
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      await apiClient.updateMessage(editingMessageId, messageText);
+      
+      // 편집 모드 종료
+      setEditingMessageId(null);
+      setEditingText('');
+      setNewMessage('');
+      
+      // WebSocket이 연결되어 있으면 자동으로 업데이트되므로 수동 새로고침 불필요
+      if (!wsConnected) {
+        await loadQueue();
+      }
+      setError(null);
+    } catch (error) {
+      console.error('Failed to update message:', error);
+      setError('메시지 수정에 실패했습니다');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 메시지 수정 취소
+  const cancelEdit = () => {
+    setEditingMessageId(null);
+    setEditingText('');
+    setNewMessage('');
+    setError(null); // 에러 메시지도 클리어
+  };
+
   const clearQueue = async () => {
     if (isClearingQueue) return;
     
@@ -632,19 +693,47 @@ export const Automation = () => {
           
           {/* Add Message */}
           <div className="p-4 border-b border-border flex-shrink-0">
+            {editingMessageId && (
+              <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                    📝 메시지 수정 모드
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={cancelEdit}
+                    className="h-6 px-2 text-xs text-muted-foreground hover:text-red-500"
+                  >
+                    <X className="w-3 h-3 mr-1" />
+                    취소
+                  </Button>
+                </div>
+              </div>
+            )}
             <textarea
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Claude에게 보낼 메시지를 입력하세요..."
-              className="w-full h-20 p-3 bg-background border border-border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+              placeholder={editingMessageId ? "메시지를 수정하세요..." : "Claude에게 보낼 메시지를 입력하세요..."}
+              className={`w-full h-20 p-3 bg-background border rounded-md resize-none focus:outline-none focus:ring-2 text-sm ${
+                editingMessageId 
+                  ? 'border-blue-300 focus:ring-blue-500' 
+                  : 'border-border focus:ring-primary'
+              }`}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                  addMessage();
+                  editingMessageId ? saveEditMessage() : addMessage();
+                } else if (e.key === 'Escape' && editingMessageId) {
+                  e.preventDefault();
+                  cancelEdit();
                 }
               }}
             />
             <p className="text-xs text-muted-foreground mt-2">
-              Ctrl/Cmd + Enter로 빠르게 추가
+              {editingMessageId 
+                ? "Ctrl/Cmd + Enter로 수정 저장 또는 위의 저장 버튼 클릭" 
+                : "Ctrl/Cmd + Enter로 빠르게 추가"
+              }
             </p>
           </div>
           
@@ -660,7 +749,11 @@ export const Automation = () => {
             ) : (
               <div className="p-4 space-y-3">
                 {[...messages].reverse().map((message) => (
-                  <div key={message.id} className="group flex items-start gap-3 p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
+                  <div key={message.id} className={`group flex items-start gap-3 p-3 rounded-lg transition-colors ${
+                    editingMessageId === message.id 
+                      ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800' 
+                      : 'bg-muted/30 hover:bg-muted/50'
+                  }`}>
                     <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${getStatusColor(message.status)}`}></div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm break-words">{message.message}</p>
@@ -673,16 +766,38 @@ export const Automation = () => {
                         </span>
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeMessage(message.id)}
-                      disabled={isLoading}
-                      className="opacity-60 group-hover:opacity-100 hover:text-red-500 transition-all disabled:opacity-30 flex-shrink-0"
-                      title="메시지 삭제"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    <div className="flex flex-col gap-1 flex-shrink-0">
+                      {message.status === 'pending' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => editingMessageId === message.id ? saveEditMessage() : startEditMessage(message)}
+                          disabled={isLoading || (editingMessageId && editingMessageId !== message.id)}
+                          className={`opacity-60 group-hover:opacity-100 transition-all disabled:opacity-30 ${
+                            editingMessageId === message.id 
+                              ? 'text-green-600 hover:text-green-700' 
+                              : 'hover:text-blue-500'
+                          }`}
+                          title={editingMessageId === message.id ? "메시지 저장" : "메시지 수정"}
+                        >
+                          {editingMessageId === message.id ? (
+                            <Save className="w-4 h-4" />
+                          ) : (
+                            <Edit className="w-4 h-4" />
+                          )}
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeMessage(message.id)}
+                        disabled={isLoading}
+                        className="opacity-60 group-hover:opacity-100 hover:text-red-500 transition-all disabled:opacity-30"
+                        title="메시지 삭제"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>

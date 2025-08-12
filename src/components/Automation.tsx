@@ -17,7 +17,7 @@ export const Automation = () => {
   const [isClearingQueue, setIsClearingQueue] = useState(false);
   const [isSendingKey, setIsSendingKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<QueueStatus | null>(null);
+  const [, setStatus] = useState<QueueStatus | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<'idle' | 'starting' | 'ready' | 'error'>('idle');
 
@@ -549,7 +549,8 @@ export const Automation = () => {
     }
   };
 
-  const stats = status?.queue || {
+  // 메시지 큐 카드와 동일한 로직 사용 - messages 상태에서 직접 통계 계산
+  const stats = {
     total: messages.length,
     pending: messages.filter(m => m.status === 'pending').length,
     processing: messages.filter(m => m.status === 'processing').length,

@@ -180,7 +180,7 @@ export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
     setIsAddingToQueue(taskId);
     
     try {
-      const message = `agent-progress-tracker 에이전트를 활용해여 ${taskId} Task를 수행하세요. 다른 Tasks들은 별도로 제가 요청을 드릴테니 해당 문제를 집중해서 해결해주세요. Think Hard, Mega Think, Ultrathink`;
+      const message = `agent-progress-tracker 에이전트를 활용해여 Task ${taskId}을(를) 수행하세요. 다른 Tasks들은 별도로 제가 요청을 드릴테니 해당 문제를 집중해서 해결해주세요. Think Hard, Mega Think, Ultrathink`;
       
       await apiClient.addMessage(message);
       

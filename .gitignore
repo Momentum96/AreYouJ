@@ -23,7 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 
-server/data/queues/*
-server/data/settings.json
+server/data/*
 
 .claude

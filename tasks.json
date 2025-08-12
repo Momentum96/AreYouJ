@@ -1,0 +1,426 @@
+{
+  "project": "AI Project Dashboard - 즉시 개선 작업 계획",
+  "version": "1.0.0",
+  "created": "2025-08-12",
+  "description": "CODEBASE_IMPROVEMENT_ROADMAP.md의 즉시 개선 영역(1-2주)을 테스트 가능한 작은 단위로 분해",
+  "overall_goal": "코드베이스 품질을 7.5/10에서 8.0-8.5/10으로 향상",
+  "estimated_total_hours": 38,
+  "tasks": [
+    {
+      "id": "1",
+      "title": "TypeScript 타입 안전성 강화",
+      "description": "any 타입 제거 및 구체적인 타입 정의로 런타임 안전성 확보",
+      "priority": "high",
+      "estimatedHours": 8,
+      "status": "pending",
+      "dependencies": [],
+      "acceptance_criteria": [
+        "src/components/Automation.tsx에서 eslint-disable 주석 제거",
+        "모든 any 타입을 구체적인 타입으로 대체",
+        "TypeScript 컴파일 에러 0개 달성",
+        "기존 기능 동작 100% 보장"
+      ],
+      "subtasks": [
+        {
+          "id": "1.1",
+          "title": "automation.ts 타입 정의 파일 생성",
+          "description": "QueueMessage, SessionStatus, WebSocketMessage 등 핵심 타입 정의",
+          "priority": "high",
+          "estimatedHours": 2,
+          "status": "pending",
+          "acceptance_criteria": [
+            "src/types/automation.ts 파일 생성",
+            "QueueMessage 인터페이스 정의 (id, message, timestamp, status, result)",
+            "SessionStatus 인터페이스 정의 (status, sessionReady, lastActivity)",
+            "WebSocketMessage 타입 정의",
+            "모든 타입이 실제 사용 케이스와 일치"
+          ]
+        },
+        {
+          "id": "1.2",
+          "title": "Automation.tsx에서 any 타입 제거",
+          "description": "eslint-disable 제거하고 구체적인 타입으로 대체",
+          "priority": "high",
+          "estimatedHours": 3,
+          "status": "pending",
+          "dependencies": ["1.1"],
+          "acceptance_criteria": [
+            "/* eslint-disable @typescript-eslint/no-explicit-any */ 주석 제거",
+            "모든 함수 매개변수와 반환값에 타입 지정",
+            "useState, useEffect 등 Hook의 타입 명시",
+            "이벤트 핸들러 타입 정의"
+          ]
+        },
+        {
+          "id": "1.3",
+          "title": "WebSocket 메시지 타입 정의 강화",
+          "description": "WebSocket으로 주고받는 메시지의 구체적인 타입 정의",
+          "priority": "high",
+          "estimatedHours": 2,
+          "status": "pending",
+          "dependencies": ["1.1"],
+          "acceptance_criteria": [
+            "각 WebSocket 이벤트 타입별 payload 구조 정의",
+            "Discriminated Union 타입 활용",
+            "타입 가드 함수 구현",
+            "런타임 타입 검증 로직 추가"
+          ]
+        },
+        {
+          "id": "1.4",
+          "title": "API 응답 타입 정의",
+          "description": "src/utils/api.ts의 API 응답에 대한 타입 안전성 강화",
+          "priority": "medium",
+          "estimatedHours": 1,
+          "status": "pending",
+          "dependencies": ["1.1"],
+          "acceptance_criteria": [
+            "API 응답 인터페이스 정의",
+            "에러 응답 타입 정의",
+            "제네릭을 활용한 재사용 가능한 타입 구조",
+            "런타임 응답 검증 추가"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2",
+      "title": "대형 컴포넌트 분할 (Automation.tsx)",
+      "description": "964줄의 Automation.tsx를 책임별로 분리하여 유지보수성 향상",
+      "priority": "high",
+      "estimatedHours": 18,
+      "status": "pending",
+      "dependencies": ["1"],
+      "acceptance_criteria": [
+        "Automation.tsx 파일 크기 200줄 이하로 축소",
+        "각 컴포넌트가 단일 책임 원칙 준수",
+        "기존 기능 100% 보존",
+        "Props Drilling 최소화",
+        "재사용 가능한 컴포넌트 구조"
+      ],
+      "subtasks": [
+        {
+          "id": "2.1",
+          "title": "컴포넌트 구조 설계 및 폴더 생성",
+          "description": "automation 폴더 구조와 컴포넌트별 책임 설계",
+          "priority": "high",
+          "estimatedHours": 2,
+          "status": "pending",
+          "dependencies": ["1"],
+          "acceptance_criteria": [
+            "src/components/automation/ 폴더 구조 생성",
+            "각 컴포넌트의 책임과 props 인터페이스 설계",
+            "hooks/ 폴더 생성 및 커스텀 훅 계획",
+            "기존 Automation.tsx 백업 생성"
+          ]
+        },
+        {
+          "id": "2.2",
+          "title": "상태 관리 로직 커스텀 훅으로 분리",
+          "description": "useAutomationState 훅으로 상태 관리 로직 추출",
+          "priority": "high",
+          "estimatedHours": 4,
+          "status": "pending",
+          "dependencies": ["2.1"],
+          "acceptance_criteria": [
+            "useAutomationState.ts 훅 구현",
+            "메시지 큐 상태 관리 로직 분리",
+            "세션 상태 관리 로직 분리",
+            "상태 업데이트 함수들 최적화",
+            "기존 상태 동작과 100% 일치"
+          ]
+        },
+        {
+          "id": "2.3",
+          "title": "WebSocket 연결 로직 커스텀 훅으로 분리",
+          "description": "useWebSocketConnection 훅으로 WebSocket 관련 로직 추출",
+          "priority": "high",
+          "estimatedHours": 5,
+          "status": "pending",
+          "dependencies": ["2.1"],
+          "risk_level": "high",
+          "acceptance_criteria": [
+            "useWebSocketConnection.ts 훅 구현",
+            "모든 WebSocket 이벤트 핸들러 정확히 이동",
+            "이벤트 리스너 등록/해제 로직 안전성 확보",
+            "연결 상태 관리 및 재연결 로직 보존",
+            "메모리 누수 방지 확인"
+          ],
+          "notes": "15개의 이벤트 핸들러를 다루므로 특별한 주의 필요"
+        },
+        {
+          "id": "2.4",
+          "title": "터미널 렌더링 로직 커스텀 훅으로 분리",
+          "description": "useTerminalRenderer 훅으로 복잡한 터미널 로직 추출",
+          "priority": "high",
+          "estimatedHours": 4,
+          "status": "pending",
+          "dependencies": ["2.1"],
+          "risk_level": "high",
+          "acceptance_criteria": [
+            "useTerminalRenderer.ts 훅 구현",
+            "hasRealTerminalContent 로직 정확히 이동",
+            "터미널 상태 판별 로직 보존",
+            "ClaudeTerminalRenderer 통합 유지",
+            "성능 최적화 로직 보존"
+          ],
+          "notes": "터미널 상태 판별 로직이 복잡하므로 신중한 분리 필요"
+        },
+        {
+          "id": "2.5",
+          "title": "UI 컴포넌트들로 분할",
+          "description": "MessageQueue, SessionControls, TerminalDisplay 등 UI 컴포넌트 분리",
+          "priority": "medium",
+          "estimatedHours": 3,
+          "status": "pending",
+          "dependencies": ["2.2", "2.3", "2.4"],
+          "acceptance_criteria": [
+            "MessageQueue.tsx 컴포넌트 생성 (메시지 목록 관리)",
+            "SessionControls.tsx 컴포넌트 생성 (세션 제어 버튼)",
+            "TerminalDisplay.tsx 컴포넌트 생성 (터미널 출력 표시)",
+            "MessageInput.tsx 컴포넌트 생성 (메시지 입력 폼)",
+            "각 컴포넌트 100줄 이하 유지"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "title": "메모리 누수 방지 개선",
+      "description": "폴링 최적화 및 리소스 관리 개선으로 메모리 사용량 최적화",
+      "priority": "high",
+      "estimatedHours": 6,
+      "status": "pending",
+      "dependencies": [],
+      "acceptance_criteria": [
+        "메모리 누수 완전 제거",
+        "탭 비활성화시 리소스 절약",
+        "WebSocket 재연결 안정성 향상",
+        "브라우저 성능 영향 최소화"
+      ],
+      "subtasks": [
+        {
+          "id": "3.1",
+          "title": "usePolling 커스텀 훅 구현",
+          "description": "안전한 폴링 로직을 위한 재사용 가능한 훅 생성",
+          "priority": "high",
+          "estimatedHours": 2,
+          "status": "pending",
+          "acceptance_criteria": [
+            "src/hooks/usePolling.ts 파일 생성",
+            "interval cleanup 자동화",
+            "컴포넌트 언마운트시 안전한 정리",
+            "pause/resume 기능 포함",
+            "의존성 배열 변경시 재시작 로직"
+          ]
+        },
+        {
+          "id": "3.2",
+          "title": "App.tsx에서 usePolling 적용",
+          "description": "기존 setInterval 로직을 usePolling으로 교체",
+          "priority": "high",
+          "estimatedHours": 2,
+          "status": "pending",
+          "dependencies": ["3.1"],
+          "acceptance_criteria": [
+            "기존 5초 폴링 로직을 usePolling으로 교체",
+            "fetchTasks 호출 빈도 동일하게 유지",
+            "에러 발생시에도 안전한 복구",
+            "성능 저하 없음"
+          ]
+        },
+        {
+          "id": "3.3",
+          "title": "탭 비활성화시 폴링 일시정지 기능 추가",
+          "description": "Page Visibility API를 활용한 리소스 절약 기능",
+          "priority": "medium",
+          "estimatedHours": 1,
+          "status": "pending",
+          "dependencies": ["3.2"],
+          "acceptance_criteria": [
+            "document.visibilityState 감지",
+            "탭 비활성화시 폴링 자동 정지",
+            "탭 활성화시 폴링 재개",
+            "사용자 경험에 영향 없음"
+          ]
+        },
+        {
+          "id": "3.4",
+          "title": "WebSocket 재연결 로직 안정성 개선",
+          "description": "연결 끊김 상황에서의 복구 로직 강화",
+          "priority": "medium",
+          "estimatedHours": 1,
+          "status": "pending",
+          "dependencies": ["2.3"],
+          "acceptance_criteria": [
+            "연결 실패시 exponential backoff 적용",
+            "최대 재시도 횟수 제한",
+            "연결 상태 사용자에게 명확히 표시",
+            "네트워크 복구시 자동 재연결"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "4",
+      "title": "기능 동일성 검증 및 성능 측정",
+      "description": "리팩토링 후 기능 보존 확인 및 성능 개선 효과 측정",
+      "priority": "high",
+      "estimatedHours": 6,
+      "status": "pending",
+      "dependencies": ["1", "2", "3"],
+      "acceptance_criteria": [
+        "모든 기존 기능 정상 동작",
+        "성능 저하 없음 (오히려 개선)",
+        "메모리 사용량 감소 확인",
+        "사용자 경험 동일성 보장"
+      ],
+      "subtasks": [
+        {
+          "id": "4.1",
+          "title": "기능별 검증 테스트 수행",
+          "description": "리팩토링 전후 기능 동작 비교 검증",
+          "priority": "high",
+          "estimatedHours": 3,
+          "status": "pending",
+          "dependencies": ["1", "2", "3"],
+          "acceptance_criteria": [
+            "메시지 큐 CRUD 기능 검증",
+            "WebSocket 실시간 통신 검증",
+            "Claude 세션 시작/종료 검증",
+            "터미널 출력 렌더링 검증",
+            "키 전송 (ESC, Enter) 기능 검증",
+            "메시지 수정/삭제 기능 검증"
+          ]
+        },
+        {
+          "id": "4.2",
+          "title": "성능 및 메모리 사용량 측정",
+          "description": "리팩토링 효과를 정량적으로 측정",
+          "priority": "medium",
+          "estimatedHours": 2,
+          "status": "pending",
+          "dependencies": ["4.1"],
+          "acceptance_criteria": [
+            "Chrome DevTools를 통한 메모리 프로파일링",
+            "JavaScript 실행 시간 측정",
+            "리렌더링 횟수 비교",
+            "번들 크기 변화 측정",
+            "성능 개선 지표 문서화"
+          ]
+        },
+        {
+          "id": "4.3",
+          "title": "코드 정리 및 문서화",
+          "description": "불필요한 코드 제거 및 변경사항 문서화",
+          "priority": "low",
+          "estimatedHours": 1,
+          "status": "pending",
+          "dependencies": ["4.2"],
+          "acceptance_criteria": [
+            "사용하지 않는 import 제거",
+            "console.log 등 디버깅 코드 정리",
+            "주요 변경사항 README 업데이트",
+            "타입 정의 파일에 JSDoc 주석 추가",
+            "코드 스타일 일관성 확인"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "5",
+      "title": "단위 테스트 인프라 구축 (추가 제안)",
+      "description": "리팩토링된 컴포넌트와 훅에 대한 테스트 환경 구축",
+      "priority": "medium",
+      "estimatedHours": 8,
+      "status": "pending",
+      "dependencies": ["2"],
+      "acceptance_criteria": [
+        "Jest + React Testing Library 환경 구축",
+        "분리된 컴포넌트별 단위 테스트 작성",
+        "커스텀 훅 테스트 구현",
+        "WebSocket 모킹 유틸리티 구현"
+      ],
+      "subtasks": [
+        {
+          "id": "5.1",
+          "title": "테스트 환경 설정",
+          "description": "Jest, React Testing Library, MSW 등 테스트 도구 설정",
+          "priority": "medium",
+          "estimatedHours": 2,
+          "status": "pending",
+          "dependencies": ["2"],
+          "acceptance_criteria": [
+            "package.json에 테스트 의존성 추가",
+            "jest.config.js 설정 파일 생성",
+            "setupTests.ts 파일 구성",
+            "test 스크립트 실행 확인"
+          ]
+        },
+        {
+          "id": "5.2",
+          "title": "WebSocket 모킹 유틸리티 구현",
+          "description": "WebSocket 통신을 테스트하기 위한 모킹 시스템",
+          "priority": "medium",
+          "estimatedHours": 3,
+          "status": "pending",
+          "dependencies": ["5.1"],
+          "acceptance_criteria": [
+            "__mocks__/websocket.ts 파일 생성",
+            "WebSocket 이벤트 시뮬레이션 기능",
+            "연결/해제 상태 모킹",
+            "메시지 송수신 테스트 지원"
+          ]
+        },
+        {
+          "id": "5.3",
+          "title": "분리된 컴포넌트별 단위 테스트 작성",
+          "description": "MessageQueue, SessionControls 등 컴포넌트 테스트",
+          "priority": "low",
+          "estimatedHours": 3,
+          "status": "pending",
+          "dependencies": ["5.2"],
+          "acceptance_criteria": [
+            "MessageQueue 컴포넌트 테스트 (CRUD 동작)",
+            "SessionControls 컴포넌트 테스트 (버튼 클릭)",
+            "TerminalDisplay 컴포넌트 테스트 (출력 렌더링)",
+            "각 테스트 커버리지 80% 이상"
+          ]
+        }
+      ]
+    }
+  ],
+  "quality_guidelines": {
+    "code_standards": [
+      "TypeScript strict 모드 사용",
+      "any 타입 사용 금지",
+      "React 함수형 컴포넌트 사용",
+      "커스텀 훅으로 로직 분리",
+      "Props 타입 명시적 정의"
+    ],
+    "performance_criteria": [
+      "컴포넌트 크기 100줄 이하 권장",
+      "React.memo 적절한 사용",
+      "useCallback, useMemo 최적화",
+      "불필요한 리렌더링 최소화"
+    ],
+    "testing_requirements": [
+      "기존 기능 동작 100% 보존",
+      "단위 테스트 커버리지 목표 80%",
+      "통합 테스트 핵심 플로우 포함",
+      "성능 저하 없음 확인"
+    ]
+  },
+  "risk_mitigation": {
+    "high_risk_tasks": ["2.3", "2.4"],
+    "rollback_strategy": "각 task별 feature flag 적용으로 즉시 복구 가능",
+    "backup_plan": "기존 Automation.tsx 백업 유지",
+    "monitoring": "각 단계별 기능 검증 및 성능 측정"
+  },
+  "success_metrics": {
+    "code_quality": "TypeScript 컴파일 에러 0개, ESLint 경고 최소화",
+    "maintainability": "컴포넌트 평균 라인 수 50% 감소",
+    "performance": "메모리 사용량 10% 이상 감소",
+    "reliability": "기존 기능 100% 동작, 새로운 버그 0개"
+  }
+}

@@ -228,7 +228,12 @@ function App() {
               </div>
             </div>
           }>
-            <Dashboard tasks={tasks} appName={__APP_NAME__} isLoadingTasks={isLoadingTasks} />
+            <Dashboard 
+              tasks={tasks} 
+              appName={__APP_NAME__} 
+              isLoadingTasks={isLoadingTasks} 
+              onTaskDeleted={() => fetchTasks()} 
+            />
           </ErrorBoundary>
         ) : (
           <ErrorBoundary fallback={

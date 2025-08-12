@@ -826,6 +826,62 @@ router.get('/tasks', (req, res) => {
   }
 });
 
+// Delete task by ID
+router.delete('/tasks/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const settings = loadSettings();
+    const projectHomePath = settings.projectHomePath;
+    const tasksFilePath = path.join(projectHomePath, 'docs', 'tasks.json');
+    
+    // Check if tasks.json exists
+    if (!fs.existsSync(tasksFilePath)) {
+      return res.status(404).json({
+        error: 'tasks.json not found in project docs directory',
+        path: tasksFilePath,
+        projectHomePath
+      });
+    }
+
+    // Read and parse tasks.json
+    const tasksData = fs.readFileSync(tasksFilePath, 'utf-8');
+    const parsedTasks = JSON.parse(tasksData);
+    
+    // Find task index
+    const taskIndex = parsedTasks.tasks.findIndex(task => task.id === id);
+    
+    if (taskIndex === -1) {
+      return res.status(404).json({
+        error: `Task with ID '${id}' not found`,
+        availableIds: parsedTasks.tasks.map(task => task.id)
+      });
+    }
+    
+    // Remove task from array
+    const deletedTask = parsedTasks.tasks.splice(taskIndex, 1)[0];
+    
+    // Write updated tasks back to file
+    fs.writeFileSync(tasksFilePath, JSON.stringify(parsedTasks, null, 2), 'utf-8');
+    
+    console.log(`✅ Successfully deleted task: ${deletedTask.title} (ID: ${id})`);
+    
+    res.json({
+      success: true,
+      deletedTask: {
+        id: deletedTask.id,
+        title: deletedTask.title
+      },
+      remainingTasks: parsedTasks.tasks.length
+    });
+  } catch (error) {
+    console.error('❌ Failed to delete task:', error);
+    res.status(500).json({
+      error: `Failed to delete task: ${error.message}`,
+      projectHomePath: loadSettings().projectHomePath
+    });
+  }
+});
+
 // Directory browser endpoints
 // List directories in a given path
 router.get('/directories', (req, res) => {

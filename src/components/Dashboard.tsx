@@ -9,9 +9,10 @@ interface DashboardProps {
   tasks: Task[];
   appName: string;
   isLoadingTasks?: boolean;
+  onTaskDeleted?: () => void;
 }
 
-export const Dashboard = ({ tasks, appName, isLoadingTasks = false }: DashboardProps) => {
+export const Dashboard = ({ tasks, appName, isLoadingTasks = false, onTaskDeleted }: DashboardProps) => {
   const {
     searchTerm,
     setSearchTerm,
@@ -42,7 +43,7 @@ export const Dashboard = ({ tasks, appName, isLoadingTasks = false }: DashboardP
         totalTasks={tasks.length}
         filteredCount={filteredTasks.length}
       />
-      <TaskTable tasks={filteredTasks} isLoading={isLoadingTasks} />
+      <TaskTable tasks={filteredTasks} isLoading={isLoadingTasks} onTaskDeleted={onTaskDeleted} />
     </div>
   );
 };

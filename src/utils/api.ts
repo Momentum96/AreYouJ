@@ -358,6 +358,21 @@ export class ApiClient {
     // TypeScript를 위한 fallback (실제로는 도달하지 않음)
     throw new ApiError('Health check failed after all retries', 500, 'server');
   }
+
+  // Delete task by ID
+  async deleteTask(taskId: string): Promise<{
+    success: boolean;
+    deletedTask: { id: string; title: string };
+    remainingTasks: number;
+  }> {
+    if (!taskId || typeof taskId !== 'string') {
+      throw new Error('Task ID를 입력해주세요');
+    }
+
+    return this.request(`/tasks/${encodeURIComponent(taskId)}`, {
+      method: 'DELETE',
+    }, `Task 삭제에 실패했습니다 (ID: ${taskId})`);
+  }
 }
 
 export const apiClient = new ApiClient();

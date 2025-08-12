@@ -18,6 +18,7 @@ import { apiClient } from '../utils/api';
 interface TaskTableProps {
   tasks: Task[];
   isLoading?: boolean;
+  onTaskDeleted?: () => void; // Callback to refresh tasks after deletion
 }
 
 // 성능 최적화를 위해 상수를 컴포넌트 외부로 이동
@@ -134,7 +135,7 @@ const SubTaskRow = ({
   </ContextMenu>
 );
 
-export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
+export const TaskTable = ({ tasks, isLoading = false, onTaskDeleted }: TaskTableProps) => {
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [selectedTask, setSelectedTask] = useState<Task | SubTask | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -219,6 +220,56 @@ export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
       }, 3000);
     } finally {
       setIsAddingToQueue(null);
+    }
+  };
+
+  const deleteTask = async (taskId: string, taskTitle: string) => {
+    // 확인 대화상자
+    if (!window.confirm(`Task "${taskTitle}"를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) {
+      return;
+    }
+
+    try {
+      await apiClient.deleteTask(taskId);
+      
+      // 성공 알림 표시
+      setNotification({
+        message: `Task "${taskTitle}"가 삭제되었습니다.`,
+        type: 'success'
+      });
+      
+      // 이전 timeout이 있다면 정리
+      if (notificationTimeoutRef.current) {
+        clearTimeout(notificationTimeoutRef.current);
+      }
+      
+      // 3초 후 알림 자동 제거
+      notificationTimeoutRef.current = setTimeout(() => {
+        setNotification(null);
+        notificationTimeoutRef.current = null;
+      }, 3000);
+      
+      // 부모 컴포넌트에 삭제 완료 알림
+      if (onTaskDeleted) {
+        onTaskDeleted();
+      }
+      
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+      setNotification({
+        message: 'Task 삭제에 실패했습니다.',
+        type: 'error'
+      });
+      
+      // 이전 timeout이 있다면 정리
+      if (notificationTimeoutRef.current) {
+        clearTimeout(notificationTimeoutRef.current);
+      }
+      
+      notificationTimeoutRef.current = setTimeout(() => {
+        setNotification(null);
+        notificationTimeoutRef.current = null;
+      }, 3000);
     }
   };
 
@@ -327,6 +378,12 @@ export const TaskTable = ({ tasks, isLoading = false }: TaskTableProps) => {
                   <ContextMenuContent>
                     <ContextMenuItem onClick={() => showTaskDetails(task)}>
                       View Details
+                    </ContextMenuItem>
+                    <ContextMenuItem 
+                      onClick={() => deleteTask(task.id, task.title)}
+                      className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                    >
+                      Remove Task
                     </ContextMenuItem>
                   </ContextMenuContent>
                 </ContextMenu>

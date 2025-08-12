@@ -723,7 +723,7 @@ export class ClaudeSessionManager extends EventEmitter {
         return;
       }
 
-    const DEBOUNCE_THRESHOLD_MS = 1000;
+    const DEBOUNCE_THRESHOLD_MS = 2000;
     const TIMEOUT_MS = 180000; // 3 minutes timeout
     let waitingForPermission = false;
     let screenAnalysisTimer = null;
@@ -731,9 +731,17 @@ export class ClaudeSessionManager extends EventEmitter {
     let lastOutputTime = Date.now();
 
     const readyPatterns = [
-      /\? for shortcuts/,
+      /\? for shortcuts/i,
+      /Bypassing Permissions/i,
+      /Welcome to Claude Code/i,
+      /claude/i,
+      /pwd:/i,
+      /cwd:/i,
+      /\u276F/,  // Unicode prompt character
+      /❯/,      // Alternative prompt character
       /\u001b\[2m\u001b\[38;5;244m│\u001b\[39m\u001b\[22m\s>/,
       />\s*$/,
+      /\$\s*$/
     ];
 
     const permissionPrompts = [
@@ -794,13 +802,28 @@ export class ClaudeSessionManager extends EventEmitter {
         this.log(`✅ Claude is ready! Pattern detected and ${timeSinceLastOutput}ms of stability`);
         cleanup();
         
+        // Remove temporary listener
+        this.off('claude-output', outputTracker);
+        
         // Claude-Autopilot style: resolve promise to indicate completion
         resolve();
       } else if (isReady) {
         this.debugLog(`⏳ Ready pattern detected but waiting for stability (${timeSinceLastOutput}ms < ${DEBOUNCE_THRESHOLD_MS}ms)`);
         screenAnalysisTimer = setTimeout(analyzeCurrentScreen, 500);
       } else {
-        this.debugLog(`⏱️  No ready pattern detected, continuing analysis`);
+        // Alternative detection: if we have substantial output and no new output for 4 seconds
+        if (screenBuffer.length > 100 && timeSinceLastOutput >= 4000) {
+          this.log(`✅ Claude is ready (detected by output stabilization)`);
+          cleanup();
+          
+          // Remove temporary listener
+          this.off('claude-output', outputTracker);
+          
+          resolve();
+          return;
+        }
+        
+        this.debugLog(`⏱️  No ready pattern detected, continuing analysis (${screenBuffer.length} chars, ${timeSinceLastOutput}ms ago)`);
         screenAnalysisTimer = setTimeout(analyzeCurrentScreen, 500);
       }
     };
@@ -1002,7 +1025,7 @@ export class ClaudeSessionManager extends EventEmitter {
       setTimeout(() => {
         this.log('Processing next message after delay...');
         this.processNextMessage();
-      }, 1000);
+      }, 2000);
       
     } catch (error) {
       this.log(`❌ Error processing message ${message.id}: ${error.message}`);
@@ -1017,7 +1040,7 @@ export class ClaudeSessionManager extends EventEmitter {
       // Continue processing next message after error
       setTimeout(() => {
         this.processNextMessage();
-      }, 1000);
+      }, 2000);
     }
   }
 

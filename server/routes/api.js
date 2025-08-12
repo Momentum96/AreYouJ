@@ -114,6 +114,21 @@ claudeSession.on('message-started', (message) => {
   });
 });
 
+claudeSession.on('message-started', (message) => {
+  console.log(`🚀 Claude started processing message: ${message.id}`);
+  
+  processingStatus.currentMessage = message;
+  processingStatus.isProcessing = true;
+  
+  // Get current queue from session manager
+  const messageQueue = claudeSession.getMessageQueue();
+  
+  broadcastToClients({
+    type: 'queue-update',
+    data: { messages: messageQueue, total: messageQueue.length }
+  });
+});
+
 claudeSession.on('message-completed', (result) => {
   console.log(`✅ Claude completed message: ${result.id} (${result.status})`);
   

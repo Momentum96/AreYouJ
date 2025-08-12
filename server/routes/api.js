@@ -88,14 +88,153 @@ const claudeSession = getClaudeSession();
 // Set up Claude session event handlers
 // Removed duplicate session-started handler - WebSocket module handles this
 
-claudeSession.on('session-ended', () => {
-  console.log('❌ Claude session ended');
+claudeSession.on('session-ended', (eventData) => {
+  const { code, signal, interruptedMessage, resetMessagesCount, remainingQueueLength } = eventData;
+  
+  console.log(`❌ Claude session ended (code: ${code}, signal: ${signal})`);
+  
+  if (interruptedMessage) {
+    console.log(`🔄 Interrupted message: ${interruptedMessage.id}`);
+  }
+  
+  if (resetMessagesCount > 0) {
+    console.log(`🔄 Reset ${resetMessagesCount} processing messages to pending status`);
+  }
+  
+  // Update local processing status
   processingStatus.isProcessing = false;
   processingStatus.currentMessage = null;
   
+  // Get updated queue from session manager
+  const messageQueue = claudeSession.getMessageQueue();
+  
+  // Broadcast comprehensive session-ended event
+  broadcastToClients({
+    type: 'session-ended',
+    data: { 
+      reason: 'Claude session ended',
+      exitCode: code,
+      signal: signal,
+      interruptedMessage: interruptedMessage ? {
+        id: interruptedMessage.id,
+        message: interruptedMessage.message.substring(0, 100) + '...'
+      } : null,
+      resetMessagesCount,
+      remainingQueueLength
+    }
+  });
+  
+  // Broadcast updated queue status
+  broadcastToClients({
+    type: 'queue-update',
+    data: { 
+      messages: messageQueue, 
+      total: messageQueue.length,
+      resetCount: resetMessagesCount
+    }
+  });
+  
+  // Broadcast processing stopped
   broadcastToClients({
     type: 'processing-stopped',
-    data: { reason: 'Claude session ended' }
+    data: { 
+      reason: 'Claude session ended',
+      wasInterrupted: !!interruptedMessage,
+      resetMessagesCount
+    }
+  });
+});
+
+// Handle manual session stops
+claudeSession.on('session-manually-stopped', (eventData) => {
+  const { interruptedMessage, resetMessagesCount, remainingQueueLength } = eventData;
+  
+  console.log('🛑 Claude session manually stopped by user');
+  
+  if (interruptedMessage) {
+    console.log(`🔄 Interrupted message: ${interruptedMessage.id}`);
+  }
+  
+  if (resetMessagesCount > 0) {
+    console.log(`🔄 Reset ${resetMessagesCount} processing messages to pending status`);
+  }
+  
+  // Update local processing status
+  processingStatus.isProcessing = false;
+  processingStatus.currentMessage = null;
+  
+  // Get updated queue from session manager
+  const messageQueue = claudeSession.getMessageQueue();
+  
+  // Broadcast manual stop event
+  broadcastToClients({
+    type: 'session-manually-stopped',
+    data: { 
+      reason: 'User stopped Claude session',
+      interruptedMessage: interruptedMessage ? {
+        id: interruptedMessage.id,
+        message: interruptedMessage.message.substring(0, 100) + '...'
+      } : null,
+      resetMessagesCount,
+      remainingQueueLength
+    }
+  });
+  
+  // Broadcast updated queue status
+  broadcastToClients({
+    type: 'queue-update',
+    data: { 
+      messages: messageQueue, 
+      total: messageQueue.length,
+      resetCount: resetMessagesCount
+    }
+  });
+  
+  // Broadcast processing stopped
+  broadcastToClients({
+    type: 'processing-stopped',
+    data: { 
+      reason: 'User stopped Claude session',
+      wasInterrupted: !!interruptedMessage,
+      resetMessagesCount
+    }
+  });
+});
+
+// Handle processing stopped due to error
+claudeSession.on('processing-stopped-due-to-error', (eventData) => {
+  const { error } = eventData;
+  
+  console.log(`❌ Processing stopped due to session error: ${error.errorMessage}`);
+  
+  // Update local processing status
+  processingStatus.isProcessing = false;
+  processingStatus.currentMessage = null;
+  
+  // Get current queue from session manager
+  const messageQueue = claudeSession.getMessageQueue();
+  
+  // Broadcast error-based stop event
+  broadcastToClients({
+    type: 'processing-stopped-due-to-error',
+    data: { 
+      reason: 'Session error prevented further processing',
+      error: {
+        type: error.errorType,
+        message: error.errorMessage,
+        messageId: error.messageId,
+        timestamp: error.timestamp
+      }
+    }
+  });
+  
+  // Broadcast updated queue status
+  broadcastToClients({
+    type: 'queue-update',
+    data: { 
+      messages: messageQueue, 
+      total: messageQueue.length
+    }
   });
 });
 
@@ -114,20 +253,6 @@ claudeSession.on('message-started', (message) => {
   });
 });
 
-claudeSession.on('message-started', (message) => {
-  console.log(`🚀 Claude started processing message: ${message.id}`);
-  
-  processingStatus.currentMessage = message;
-  processingStatus.isProcessing = true;
-  
-  // Get current queue from session manager
-  const messageQueue = claudeSession.getMessageQueue();
-  
-  broadcastToClients({
-    type: 'queue-update',
-    data: { messages: messageQueue, total: messageQueue.length }
-  });
-});
 
 claudeSession.on('message-completed', (result) => {
   console.log(`✅ Claude completed message: ${result.id} (${result.status})`);
@@ -693,17 +818,50 @@ router.post('/claude/start', async (req, res) => {
 
 router.post('/claude/stop', async (req, res) => {
   try {
+    const statusBefore = claudeSession.getStatus();
+    const queueBefore = claudeSession.getMessageQueue();
+    
+    console.log('🛑 Stopping Claude session via API request');
+    console.log(`📊 Session status before stop: ${JSON.stringify(statusBefore)}`);
+    console.log(`📊 Queue before stop: ${queueBefore.length} messages`);
+    
     await claudeSession.stop();
+    
+    const statusAfter = claudeSession.getStatus();
+    const queueAfter = claudeSession.getMessageQueue();
+    
+    // Count any messages that were reset from processing to pending
+    const processingBefore = queueBefore.filter(m => m.status === 'processing').length;
+    const pendingAfter = queueAfter.filter(m => m.status === 'pending').length;
+    const pendingBefore = queueBefore.filter(m => m.status === 'pending').length;
+    const resetCount = Math.max(0, pendingAfter - pendingBefore);
+    
+    console.log(`📊 Messages reset to pending: ${resetCount}`);
     
     res.json({
       success: true,
-      message: 'Claude session stopped',
-      status: claudeSession.getStatus()
+      message: 'Claude session stopped successfully',
+      statusBefore: {
+        sessionReady: statusBefore.sessionReady,
+        currentlyProcessing: statusBefore.currentlyProcessing,
+        processAlive: statusBefore.processAlive
+      },
+      statusAfter: statusAfter,
+      queueInfo: {
+        totalMessages: queueAfter.length,
+        pendingMessages: queueAfter.filter(m => m.status === 'pending').length,
+        completedMessages: queueAfter.filter(m => m.status === 'completed').length,
+        errorMessages: queueAfter.filter(m => m.status === 'error').length,
+        resetCount: resetCount
+      },
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     console.error('❌ Failed to stop Claude session:', error);
     res.status(500).json({
-      error: `Failed to stop Claude session: ${error.message}`
+      success: false,
+      error: `Failed to stop Claude session: ${error.message}`,
+      timestamp: new Date().toISOString()
     });
   }
 });

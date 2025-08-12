@@ -563,10 +563,17 @@ export class ClaudeSessionManager extends EventEmitter {
       }
       this.currentScreenBuffer += rawText;
       
-      // Prevent memory issues with large buffers
-      if (this.currentScreenBuffer.length > 50000) {
-        this.currentScreenBuffer = this.currentScreenBuffer.slice(-40000);
-        this.debugLog(`📋 Screen buffer trimmed to prevent memory issues`);
+      // Prevent memory issues with large buffers - more aggressive trimming
+      if (this.currentScreenBuffer.length > 30000) {
+        const oldLength = this.currentScreenBuffer.length;
+        this.currentScreenBuffer = this.currentScreenBuffer.slice(-20000);
+        this.debugLog(`📋 Screen buffer trimmed: ${oldLength} → ${this.currentScreenBuffer.length} chars`);
+        
+        // Suggest garbage collection for large buffer trims
+        if (oldLength > 100000 && global.gc) {
+          setImmediate(() => global.gc());
+          this.debugLog(`🗑️ Garbage collection suggested after large buffer trim`);
+        }
       }
     }
     
@@ -613,8 +620,36 @@ export class ClaudeSessionManager extends EventEmitter {
       this.log(`⚠️ Process exited with ${this.messageQueue.length} messages still in queue`);
     }
     
+    // Handle interrupted processing message
+    let interruptedMessage = null;
     if (this.currentlyProcessing) {
       this.log(`⚠️ Process exited while processing message: ${this.currentlyProcessing.id}`);
+      interruptedMessage = this.currentlyProcessing;
+      
+      // Reset interrupted message back to pending status
+      const messageInQueue = this.messageQueue.find(m => m.id === this.currentlyProcessing.id);
+      if (messageInQueue && messageInQueue.status === 'processing') {
+        messageInQueue.status = 'pending';
+        messageInQueue.error = null; // Clear any previous error
+        this.log(`🔄 Reset interrupted message ${messageInQueue.id} from processing to pending`);
+      }
+    }
+    
+    // Reset all processing messages to pending (safety measure)
+    let resetCount = 0;
+    this.messageQueue.forEach(message => {
+      if (message.status === 'processing') {
+        message.status = 'pending';
+        message.error = null;
+        resetCount++;
+        this.log(`🔄 Reset processing message ${message.id} to pending status`);
+      }
+    });
+    
+    if (resetCount > 0) {
+      this.log(`🔄 Reset ${resetCount} processing messages to pending status`);
+      // Save queue with updated message statuses
+      this.saveQueueToFile();
     }
     
     // Clean up state
@@ -625,7 +660,15 @@ export class ClaudeSessionManager extends EventEmitter {
     this.isStopping = false;
     
     this.stopHealthCheck();
-    this.emit('session-ended', { code, signal });
+    
+    // Emit session-ended event with additional context
+    this.emit('session-ended', { 
+      code, 
+      signal, 
+      interruptedMessage,
+      resetMessagesCount: resetCount,
+      remainingQueueLength: this.messageQueue.length
+    });
   }
 
 
@@ -937,6 +980,40 @@ export class ClaudeSessionManager extends EventEmitter {
     this.isStopping = true;
     this.log('🛑 Stopping Claude session...');
     
+    // Handle interrupted processing message before stopping
+    let interruptedMessage = null;
+    let resetCount = 0;
+    
+    if (this.currentlyProcessing) {
+      this.log(`⚠️ Stopping session while processing message: ${this.currentlyProcessing.id}`);
+      interruptedMessage = this.currentlyProcessing;
+      
+      // Reset interrupted message back to pending status
+      const messageInQueue = this.messageQueue.find(m => m.id === this.currentlyProcessing.id);
+      if (messageInQueue && messageInQueue.status === 'processing') {
+        messageInQueue.status = 'pending';
+        messageInQueue.error = null; // Clear any previous error
+        resetCount++;
+        this.log(`🔄 Reset interrupted message ${messageInQueue.id} from processing to pending`);
+      }
+    }
+    
+    // Reset any other processing messages to pending (safety measure)
+    this.messageQueue.forEach(message => {
+      if (message.status === 'processing' && message.id !== (interruptedMessage?.id)) {
+        message.status = 'pending';
+        message.error = null;
+        resetCount++;
+        this.log(`🔄 Reset processing message ${message.id} to pending status`);
+      }
+    });
+    
+    if (resetCount > 0) {
+      this.log(`🔄 Reset ${resetCount} processing messages to pending status`);
+      // Save queue with updated message statuses
+      this.saveQueueToFile();
+    }
+    
     if (this.pythonProcess && !this.pythonProcess.killed) {
       try {
         // Try graceful exit first
@@ -965,6 +1042,14 @@ export class ClaudeSessionManager extends EventEmitter {
     this.cleanup();
     this.lastStopTime = Date.now();
     this.isStopping = false;
+    
+    // Emit manual stop event with additional context
+    this.emit('session-manually-stopped', { 
+      interruptedMessage,
+      resetMessagesCount: resetCount,
+      remainingQueueLength: this.messageQueue.length
+    });
+    
     this.log('✅ Claude session stopped');
   }
 
@@ -1052,15 +1137,39 @@ export class ClaudeSessionManager extends EventEmitter {
       
     } catch (error) {
       this.log(`❌ Error processing message ${message.id}: ${error.message}`);
+      
+      // Enhanced error handling with context
+      const errorContext = {
+        messageId: message.id,
+        errorType: error.name || 'UnknownError',
+        errorMessage: error.message,
+        timestamp: this.createLocalTimeString(),
+        sessionStatus: this.getStatus()
+      };
+      
       message.status = 'error';
       message.error = `Processing failed: ${error.message}`;
+      message.errorContext = errorContext;
       this.currentlyProcessing = null;
+      
+      // Log detailed error information
+      this.log(`❌ Error context: ${JSON.stringify(errorContext, null, 2)}`);
+      
       this.emit('message-completed', message);
       
       // Save queue with updated message status
       this.saveQueueToFile();
       
-      // Continue processing next message after error
+      // If this is a session-related error, don't continue processing
+      if (error.message.includes('Claude process not available') || 
+          error.message.includes('session not ready') ||
+          error.message.includes('stdin is not writable')) {
+        this.log(`❌ Session-related error detected, stopping auto-processing`);
+        this.emit('processing-stopped-due-to-error', { error: errorContext });
+        return;
+      }
+      
+      // Continue processing next message after other types of errors
       setTimeout(() => {
         this.processNextMessage();
       }, 2000);

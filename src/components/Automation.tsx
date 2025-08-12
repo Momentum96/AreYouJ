@@ -68,8 +68,10 @@ export const Automation = () => {
     terminalRenderer.current = new ClaudeTerminalRenderer();
   }, [checkSessionStatus]);
 
-  // Initialize WebSocket connection and load initial data
+  // Initialize component and set up event handlers for global WebSocket
   useEffect(() => {
+    console.log('🤖 Automation component initializing...');
+    
     // Load initial data
     loadQueue();
     loadStatus();
@@ -77,8 +79,17 @@ export const Automation = () => {
     // Check current session status when component mounts
     checkSessionStatus();
     
-    // Set up WebSocket event handlers first
+    // Check if we need to auto-start processing when returning to this page
+    setTimeout(() => {
+      checkAndTriggerAutoProcessing();
+    }, 1000);
+
+    // Check if WebSocket is already connected from global App
+    setWsConnected(wsClient.isConnected());
+    
+    // Set up WebSocket event handlers
     const handleConnection = (message: any) => {
+      console.log('🔌 WebSocket connection event in Automation:', message.data);
       setWsConnected(message.data.status === 'connected');
       if (message.data.status === 'connected') {
         // Check if Claude session info is available
@@ -135,8 +146,6 @@ export const Automation = () => {
       setSessionStatus(ready ? 'ready' : 'idle');
     };
 
-    // Removed handleTerminalOutput - Claude-Autopilot style uses only claude-output event
-
     const handleClaudeOutput = (message: any) => {
       // Claude-Autopilot style output handling - render to actual terminal
       if (message.data.cleared) {
@@ -182,7 +191,7 @@ export const Automation = () => {
 
     // Handle working directory changes
     const handleWorkingDirectoryChanged = () => {
-      console.log('Working directory changed, refreshing queue...');
+      console.log('Working directory changed in Automation, refreshing queue...');
       // Reload queue for new working directory
       loadQueue();
       loadStatus();
@@ -201,7 +210,7 @@ export const Automation = () => {
     wsClient.off('process-error', handleProcessError);
     wsClient.off('working-directory-changed', handleWorkingDirectoryChanged);
 
-    // Register event handlers
+    // Register event handlers using global WebSocket
     wsClient.on('connection', handleConnection);
     wsClient.on('queue-update', handleQueueUpdate);
     wsClient.on('status-update', handleStatusUpdate);
@@ -216,22 +225,9 @@ export const Automation = () => {
     wsClient.on('process-error', handleProcessError);
     wsClient.on('working-directory-changed', handleWorkingDirectoryChanged);
 
-    // Set up WebSocket connection
-    const connectWebSocket = async () => {
-      try {
-        if (!wsClient.isConnected()) {
-          await wsClient.connect();
-          console.log('✅ WebSocket connected');
-        }
-      } catch (error) {
-        console.error('❌ WebSocket connection failed:', error);
-      }
-    };
-
-    connectWebSocket();
-
-    // Cleanup on unmount - remove specific handlers
+    // Cleanup on unmount - remove specific handlers only
     return () => {
+      console.log('🧹 Automation component cleanup - removing event handlers');
       wsClient.off('connection', handleConnection);
       wsClient.off('queue-update', handleQueueUpdate);
       wsClient.off('status-update', handleStatusUpdate);
@@ -246,10 +242,7 @@ export const Automation = () => {
       wsClient.off('process-error', handleProcessError);
       wsClient.off('working-directory-changed', handleWorkingDirectoryChanged);
       
-      // Note: WebSocket connection은 싱글톤으로 관리되므로 컴포넌트에서 직접 해제하지 않습니다.
-      // 다른 컴포넌트에서 사용 중일 수 있으므로, 이벤트 핸들러만 정리합니다.
-      // WebSocket 연결은 애플리케이션 수준에서 관리되어야 합니다.
-      console.log('🧹 Automation component cleanup completed - event handlers removed');
+      // Note: WebSocket connection is managed globally by App component
     };
   }, [checkSessionStatus]);
 
@@ -279,6 +272,44 @@ export const Automation = () => {
     }
   };
 
+
+  // Check and trigger auto-processing if conditions are met
+  const checkAndTriggerAutoProcessing = async () => {
+    try {
+      const [queueResponse, statusResponse] = await Promise.all([
+        apiClient.getQueue(),
+        apiClient.getStatus()
+      ]);
+      
+      const hasPendingMessages = queueResponse.messages.some((m: any) => m.status === 'pending');
+      const isSessionReady = statusResponse.claude?.sessionReady || false;
+      const isCurrentlyProcessing = statusResponse.processing?.isProcessing || false;
+      
+      console.log('🔍 Auto-processing check:', {
+        hasPendingMessages,
+        isSessionReady,
+        isCurrentlyProcessing,
+        pendingCount: queueResponse.messages.filter((m: any) => m.status === 'pending').length
+      });
+      
+      if (hasPendingMessages && isSessionReady && !isCurrentlyProcessing) {
+        console.log('✅ Auto-starting processing - conditions met');
+        // Trigger auto-processing by calling the server's auto-start trigger endpoint
+        await fetch('http://localhost:5001/api/processing/auto-start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } else {
+        console.log('❌ Auto-processing not triggered:', {
+          reason: !hasPendingMessages ? 'No pending messages' : 
+                  !isSessionReady ? 'Session not ready' :
+                  isCurrentlyProcessing ? 'Already processing' : 'Unknown'
+        });
+      }
+    } catch (error) {
+      console.error('Failed to check auto-processing conditions:', error);
+    }
+  };
 
   // Helper function to check if terminal has real Claude content
   const hasRealTerminalContent = (content: string) => {

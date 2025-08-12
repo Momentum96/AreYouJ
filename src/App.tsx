@@ -4,6 +4,7 @@ import { Dashboard } from "./components/Dashboard";
 import { Automation } from "./components/Automation";
 import { ProjectHomePathSetting } from "./components/ProjectHomePathSetting";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { wsClient } from "./utils/websocket";
 import type { Task } from "./types/task";
 
 type NavigationTab = 'dashboard' | 'automation';
@@ -86,43 +87,60 @@ function App() {
     };
   }, [fetchTasks]);
 
-  // WebSocket을 통한 설정 변경 감지
+  // Global WebSocket connection management
   useEffect(() => {
-    const connectWebSocket = () => {
-      const ws = new WebSocket(`ws://${window.location.host}`);
-      
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          
-          // 프로젝트 경로 변경 시 tasks 새로고침
-          if (message.type === 'settings-update') {
-            const newProjectPath = message.data.settings.projectHomePath;
-            if (newProjectPath !== projectPath) {
-              console.log('Project path changed, refreshing tasks...');
-              // 로딩 상태를 보여주면서 tasks를 새로고침
-              setTimeout(() => {
-                fetchTasks(true); // 기존 fetchTasks 함수 재사용
-              }, 100);
-            }
-          }
-        } catch (e) {
-          console.error('WebSocket message parse error:', e);
+    console.log('🌍 Initializing global WebSocket connection...');
+    
+    const handleSettingsUpdate = (message: any) => {
+      // 프로젝트 경로 변경 시 tasks 새로고침
+      if (message.type === 'settings-update') {
+        const newProjectPath = message.data.settings.projectHomePath;
+        if (newProjectPath !== projectPath) {
+          console.log('Project path changed, refreshing tasks...');
+          // 로딩 상태를 보여주면서 tasks를 새로고침
+          setTimeout(() => {
+            fetchTasks(true);
+          }, 100);
         }
-      };
-
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
-
-      return ws;
+      }
     };
 
-    const ws = connectWebSocket();
+    const handleWorkingDirectoryChanged = (message: any) => {
+      console.log('Working directory changed, refreshing tasks...', message.data);
+      setTimeout(() => {
+        fetchTasks(true);
+      }, 100);
+    };
+
+    // Set up WebSocket connection
+    const connectWebSocket = async () => {
+      try {
+        if (!wsClient.isConnected()) {
+          await wsClient.connect();
+          console.log('✅ Global WebSocket connected');
+        }
+      } catch (error) {
+        console.error('❌ Global WebSocket connection failed:', error);
+      }
+    };
+
+    // Register event handlers
+    wsClient.on('settings-update', handleSettingsUpdate);
+    wsClient.on('working-directory-changed', handleWorkingDirectoryChanged);
+    
+    // Connect WebSocket
+    connectWebSocket();
+
+    // Cleanup on unmount (this will only happen when the entire app unmounts)
     return () => {
-      ws.close();
+      console.log('🧹 App component cleanup - removing WebSocket handlers');
+      wsClient.off('settings-update', handleSettingsUpdate);
+      wsClient.off('working-directory-changed', handleWorkingDirectoryChanged);
+      
+      // Note: We don't disconnect the WebSocket here because it should persist
+      // throughout the entire app lifecycle. It will be cleaned up when the browser closes.
     };
-  }, [projectPath, error]);
+  }, [projectPath, fetchTasks]);
 
   useEffect(() => {
     // 프로젝트 이름을 대시보드 제목으로 변환

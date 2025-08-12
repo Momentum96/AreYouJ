@@ -501,6 +501,57 @@ router.post('/processing/start', async (req, res) => {
   return res.redirect(307, '/api/session/start');
 });
 
+// Auto-start processing (triggered when returning to automation page)
+router.post('/processing/auto-start', async (req, res) => {
+  try {
+    console.log('🔄 Auto-start processing triggered from frontend');
+    
+    const claudeStatus = claudeSession.getStatus();
+    const messageQueue = claudeSession.getMessageQueue();
+    
+    if (!claudeStatus.sessionReady) {
+      return res.status(400).json({
+        error: 'Claude session not ready',
+        claudeStatus
+      });
+    }
+    
+    const hasPendingMessages = messageQueue.some(m => m.status === 'pending');
+    if (!hasPendingMessages) {
+      return res.json({
+        success: true,
+        message: 'No pending messages to process',
+        queueLength: messageQueue.length
+      });
+    }
+    
+    if (claudeStatus.currentlyProcessing) {
+      return res.json({
+        success: true,
+        message: 'Already processing messages',
+        currentMessage: claudeStatus.currentlyProcessing
+      });
+    }
+    
+    // Trigger auto-processing
+    console.log('✅ Triggering auto-start processing via session manager');
+    claudeSession.tryAutoStartProcessing();
+    
+    res.json({
+      success: true,
+      message: 'Auto-processing triggered successfully',
+      queueLength: messageQueue.length,
+      pendingCount: messageQueue.filter(m => m.status === 'pending').length
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to trigger auto-start processing:', error);
+    res.status(500).json({
+      error: `Failed to trigger auto-start processing: ${error.message}`
+    });
+  }
+});
+
 // Stop processing (with Claude integration)
 router.post('/processing/stop', async (req, res) => {
   try {

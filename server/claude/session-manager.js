@@ -64,6 +64,29 @@ export class ClaudeSessionManager extends EventEmitter {
     return this.messageQueue;
   }
 
+  // Update specific message in queue (used by API)
+  updateMessageInQueue(messageId, newMessage) {
+    const messageIndex = this.messageQueue.findIndex(m => m.id === messageId);
+    if (messageIndex === -1) {
+      return null;
+    }
+    
+    // Only allow updating pending messages
+    if (this.messageQueue[messageIndex].status !== 'pending') {
+      this.log(`❌ Cannot update message ${messageId} - status is ${this.messageQueue[messageIndex].status}`);
+      return null;
+    }
+    
+    const oldMessage = this.messageQueue[messageIndex].message;
+    this.messageQueue[messageIndex].message = newMessage;
+    this.log(`📝 Updated message in queue: ${messageId} (${oldMessage.substring(0, 50)}... → ${newMessage.substring(0, 50)}...)`);
+    
+    // Save queue to file
+    this.saveQueueToFile();
+    
+    return this.messageQueue[messageIndex];
+  }
+
   // Remove specific message from queue (used by API)
   removeMessageFromQueue(messageId) {
     const messageIndex = this.messageQueue.findIndex(m => m.id === messageId);

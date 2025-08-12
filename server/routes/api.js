@@ -307,6 +307,59 @@ router.post('/queue/add', async (req, res) => {
   });
 });
 
+// Update message in queue
+router.put('/queue/:id', (req, res) => {
+  const { id } = req.params;
+  const { message } = req.body;
+  
+  if (!message || typeof message !== 'string') {
+    return res.status(400).json({
+      error: 'Message is required and must be a string'
+    });
+  }
+
+  const updatedMessage = claudeSession.updateMessageInQueue(id, message.trim());
+  
+  if (!updatedMessage) {
+    return res.status(404).json({
+      error: 'Message not found'
+    });
+  }
+
+  const messageQueue = claudeSession.getMessageQueue();
+  
+  // Broadcast queue update
+  broadcastToClients({
+    type: 'queue-update',
+    data: {
+      messages: messageQueue,
+      total: messageQueue.length
+    }
+  });
+
+  // Broadcast status update
+  broadcastToClients({
+    type: 'status-update',
+    data: {
+      status: 'ready',
+      queue: {
+        total: messageQueue.length,
+        pending: messageQueue.filter(m => m.status === 'pending').length,
+        processing: messageQueue.filter(m => m.status === 'processing').length,
+        completed: messageQueue.filter(m => m.status === 'completed').length,
+        error: messageQueue.filter(m => m.status === 'error').length
+      },
+      processing: processingStatus
+    }
+  });
+  
+  res.json({
+    success: true,
+    message: 'Message updated in queue',
+    updatedMessage
+  });
+});
+
 // Delete message from queue
 router.delete('/queue/:id', (req, res) => {
   const { id } = req.params;

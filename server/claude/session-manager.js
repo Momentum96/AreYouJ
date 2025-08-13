@@ -599,6 +599,44 @@ export class ClaudeSessionManager extends EventEmitter {
     }
   }
 
+  validateMessageQueueIntegrity() {
+    // Ensure only one message is in 'processing' state
+    const processingMessages = this.messageQueue.filter(m => m.status === 'processing');
+    
+    if (processingMessages.length > 1) {
+      this.log(`⚠️ Queue integrity issue: ${processingMessages.length} messages in processing state`);
+      
+      // Keep only the current processing message, reset others to pending
+      processingMessages.forEach(msg => {
+        if (this.currentlyProcessing && msg.id !== this.currentlyProcessing.id) {
+          msg.status = 'pending';
+          delete msg.processingStartedAt;
+          this.log(`🔄 Reset message ${msg.id} from processing to pending (integrity check)`);
+        }
+      });
+      
+      this.saveQueueToFile();
+      return false;
+    }
+    
+    // Verify currentlyProcessing matches queue state
+    if (this.currentlyProcessing) {
+      const queueMessage = this.messageQueue.find(m => m.id === this.currentlyProcessing.id);
+      if (!queueMessage) {
+        this.log(`⚠️ currentlyProcessing references non-existent message`);
+        this.currentlyProcessing = null;
+        return false;
+      }
+      if (queueMessage.status !== 'processing') {
+        this.log(`⚠️ currentlyProcessing message has status ${queueMessage.status}`);
+        this.currentlyProcessing = null;
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
   handleProcessExit(code, signal) {
     this.log(`Claude process exited with code ${code}, signal ${signal}`);
     
@@ -790,7 +828,7 @@ export class ClaudeSessionManager extends EventEmitter {
       }
 
     const DEBOUNCE_THRESHOLD_MS = 2000;
-    const TIMEOUT_MS = 180000; // 3 minutes timeout
+    const TIMEOUT_MS = 600000; // 10 minutes timeout for long-running tasks
     let waitingForPermission = false;
     let screenAnalysisTimer = null;
     let timeoutTimer = null;
@@ -902,16 +940,36 @@ export class ClaudeSessionManager extends EventEmitter {
     // Add temporary listener for output timing
     this.on('claude-output', outputTracker);
 
-    // Set up timeout
+    // Set up timeout with session health check
     timeoutTimer = setTimeout(() => {
-      this.log(`❌ Timeout after ${TIMEOUT_MS / 1000}s waiting for Claude to be ready`);
-      cleanup();
+      this.log(`⏱️ Extended timeout after ${TIMEOUT_MS / 1000}s - checking session health`);
       
-      // Remove temporary listener
-      this.off('claude-output', outputTracker);
+      // Check if Claude session is still alive
+      if (!this.pythonProcess || this.pythonProcess.killed || this.pythonProcess.exitCode !== null) {
+        this.log(`❌ Claude process died during long operation`);
+        cleanup();
+        this.off('claude-output', outputTracker);
+        reject(new Error('Claude process died during operation'));
+        return;
+      }
       
-      // Claude-Autopilot style: reject promise on timeout
-      reject(new Error('Timeout waiting for Claude to finish processing'));
+      // Check if we're still receiving output (task might still be running)
+      const timeSinceLastOutput = Date.now() - lastOutputTime;
+      if (timeSinceLastOutput < 30000) { // If output within last 30 seconds
+        this.log(`⏳ Still receiving output (${timeSinceLastOutput}ms ago), extending timeout`);
+        // Extend timeout by another 5 minutes
+        timeoutTimer = setTimeout(() => {
+          this.log(`❌ Final timeout after extended period`);
+          cleanup();
+          this.off('claude-output', outputTracker);
+          reject(new Error('Extended timeout waiting for Claude to finish processing'));
+        }, 300000); // Additional 5 minutes
+      } else {
+        this.log(`❌ No recent output, timing out`);
+        cleanup();
+        this.off('claude-output', outputTracker);
+        reject(new Error('Timeout waiting for Claude to finish processing'));
+      }
     }, TIMEOUT_MS);
 
     // Start screen analysis
@@ -1056,6 +1114,9 @@ export class ClaudeSessionManager extends EventEmitter {
   tryAutoStartProcessing() {
     this.log('🔍 Auto-start check triggered');
     
+    // Validate queue integrity first
+    this.validateMessageQueueIntegrity();
+    
     if (!this.sessionReady) {
       this.log('❌ Auto-start conditions not met - session not ready');
       return;
@@ -1106,7 +1167,9 @@ export class ClaudeSessionManager extends EventEmitter {
     }
 
     this.log(`📋 Processing message: ${message.id}`);
+    this.log(`📋 Message preview: "${message.message.substring(0, 100)}${message.message.length > 100 ? '...' : ''}"`);
     message.status = 'processing';
+    message.processingStartedAt = this.createLocalTimeString();
     this.currentlyProcessing = message;
     this.emit('message-started', message);
 
@@ -1120,9 +1183,11 @@ export class ClaudeSessionManager extends EventEmitter {
       this.log('⏰ Waiting for Claude to process message and show prompt...');
       await this.waitForPrompt();
       
-      this.log(`✅ Message ${message.id} completed`);
+      const processingTime = Date.now() - new Date(message.processingStartedAt).getTime();
+      this.log(`✅ Message ${message.id} completed in ${(processingTime / 1000).toFixed(1)}s`);
       message.status = 'completed';
       message.completedAt = this.createLocalTimeString();
+      message.processingTimeMs = processingTime;
       this.currentlyProcessing = null;
       this.emit('message-completed', message);
       
@@ -1139,12 +1204,17 @@ export class ClaudeSessionManager extends EventEmitter {
       this.log(`❌ Error processing message ${message.id}: ${error.message}`);
       
       // Enhanced error handling with context
+      const processingTime = message.processingStartedAt ? 
+        Date.now() - new Date(message.processingStartedAt).getTime() : 0;
+      
       const errorContext = {
         messageId: message.id,
         errorType: error.name || 'UnknownError',
         errorMessage: error.message,
         timestamp: this.createLocalTimeString(),
-        sessionStatus: this.getStatus()
+        sessionStatus: this.getStatus(),
+        processingTimeMs: processingTime,
+        isTimeout: error.message.includes('Timeout') || error.message.includes('timeout')
       };
       
       message.status = 'error';
@@ -1169,10 +1239,31 @@ export class ClaudeSessionManager extends EventEmitter {
         return;
       }
       
-      // Continue processing next message after other types of errors
-      setTimeout(() => {
-        this.processNextMessage();
-      }, 2000);
+      // Check if timeout error and session is still healthy
+      if (error.message.includes('Timeout') || error.message.includes('timeout')) {
+        this.log(`⏱️ Timeout error detected - checking if Claude is still processing`);
+        
+        // Wait for potential completion before continuing
+        setTimeout(() => {
+          // Check if Claude returned to ready state
+          const readyPatterns = [/\? for shortcuts/i, /❯/, />\s*$/, /\$\s*$/];
+          const screenBuffer = this.currentScreenBuffer || '';
+          const isReady = readyPatterns.some(pattern => pattern.test(screenBuffer));
+          
+          if (isReady) {
+            this.log(`✅ Claude returned to ready state after timeout - continuing`);
+            this.processNextMessage();
+          } else {
+            this.log(`❌ Claude still not ready after timeout - stopping processing`);
+            this.emit('processing-stopped-due-to-error', { error: errorContext });
+          }
+        }, 5000);
+      } else {
+        // Continue processing next message after other types of errors
+        setTimeout(() => {
+          this.processNextMessage();
+        }, 2000);
+      }
     }
   }
 

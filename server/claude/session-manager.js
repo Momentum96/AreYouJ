@@ -29,6 +29,15 @@ export class ClaudeSessionManager extends EventEmitter {
     this.lastStopTime = 0;
     this.currentWorkingDirectory = null; // Current working directory for queue management
     
+    // Output throttling and auto-clear (Claude-Autopilot style)
+    this.outputBuffer = '';
+    this.outputTimer = null;
+    this.autoClearTimer = null;
+    this.lastOutputTime = 0;
+    this.OUTPUT_THROTTLE_MS = 1000; // 1 second throttle
+    this.OUTPUT_AUTO_CLEAR_MS = 30000; // 30 seconds auto-clear
+    this.OUTPUT_MAX_BUFFER_SIZE = 100000; // 100KB max buffer
+    
     // Debug logging
     this.debugLogFile = path.join(__dirname, '../logs/claude-debug.log');
     this.ensureLogDirectory();
@@ -453,10 +462,22 @@ export class ClaudeSessionManager extends EventEmitter {
       this.log(`Executing: ${args.join(' ')}`);
       this.log(`Working directory: ${projectHomePath}`);
 
-      // Spawn Python process (Claude-Autopilot style)
+      // Create filtered environment for security
+      const safeEnv = {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        USER: process.env.USER,
+        PYTHONPATH: process.env.PYTHONPATH,
+        PYTHONUNBUFFERED: '1',
+        // Add any other necessary environment variables
+        LANG: process.env.LANG,
+        LC_ALL: process.env.LC_ALL
+      };
+
+      // Spawn Python process with filtered environment (Claude-Autopilot style)
       this.pythonProcess = spawn(args[0], args.slice(1), {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, PYTHONUNBUFFERED: '1' },
+        env: safeEnv,
         detached: false
       });
 
@@ -580,45 +601,114 @@ export class ClaudeSessionManager extends EventEmitter {
     const rawText = data.toString();
     this.lastActivity = Date.now();
     
-    // Update current screen buffer for prompt analysis (Claude-Autopilot style)
+    // Send to throttled output system (Claude-Autopilot style)
+    this.sendClaudeOutput(rawText);
+  }
+
+  // Claude-Autopilot style output handling with throttling and auto-clear
+  sendClaudeOutput(output) {
+    this.outputBuffer += output;
+    
+    // Prevent buffer overflow with more memory-efficient approach
+    if (this.outputBuffer.length > this.OUTPUT_MAX_BUFFER_SIZE) {
+      const oldLength = this.outputBuffer.length;
+      const targetSize = Math.floor(this.OUTPUT_MAX_BUFFER_SIZE * 0.75);
+      
+      // Use slice which is more memory efficient than substring
+      // and explicitly trigger garbage collection hint
+      const trimmedBuffer = this.outputBuffer.slice(-targetSize);
+      this.outputBuffer = null; // Help GC by nullifying old reference
+      this.outputBuffer = trimmedBuffer;
+      
+      this.debugLog(`📦 Output buffer too large (${oldLength} chars), truncating to ${this.outputBuffer.length} chars`);
+      
+      // Suggest garbage collection for large buffer operations
+      if (oldLength > 200000 && global.gc) {
+        setImmediate(() => {
+          global.gc();
+          this.debugLog(`🗑️ Garbage collection triggered after large buffer trim`);
+        });
+      }
+    }
+    
+    // Handle clear screen patterns
     const clearScreenPatterns = ['\x1b[2J', '\x1b[H\x1b[2J', '\x1b[2J\x1b[H', '\x1b[1;1H\x1b[2J', '\x1b[2J\x1b[1;1H', '\x1b[3J'];
     let foundClearScreen = false;
+    let lastClearScreenIndex = -1;
     
     for (const pattern of clearScreenPatterns) {
-      if (rawText.includes(pattern)) {
+      const index = this.outputBuffer.lastIndexOf(pattern);
+      if (index > lastClearScreenIndex) {
+        lastClearScreenIndex = index;
         foundClearScreen = true;
-        break;
       }
     }
     
     if (foundClearScreen) {
-      // Clear screen detected - reset screen buffer
-      this.currentScreenBuffer = rawText;
       this.debugLog(`🖥️  Clear screen detected - reset screen buffer`);
+      const newScreen = this.outputBuffer.substring(lastClearScreenIndex);
+      this.currentScreenBuffer = newScreen;
+      this.outputBuffer = this.currentScreenBuffer;
     } else {
-      // Append to current screen buffer
-      if (!this.currentScreenBuffer) {
-        this.currentScreenBuffer = '';
-      }
-      this.currentScreenBuffer += rawText;
-      
-      // Prevent memory issues with large buffers - more aggressive trimming
-      if (this.currentScreenBuffer.length > 30000) {
-        const oldLength = this.currentScreenBuffer.length;
-        this.currentScreenBuffer = this.currentScreenBuffer.slice(-20000);
-        this.debugLog(`📋 Screen buffer trimmed: ${oldLength} → ${this.currentScreenBuffer.length} chars`);
-        
-        // Suggest garbage collection for large buffer trims
-        if (oldLength > 100000 && global.gc) {
-          setImmediate(() => global.gc());
-          this.debugLog(`🗑️ Garbage collection suggested after large buffer trim`);
-        }
+      this.currentScreenBuffer = this.outputBuffer;
+    }
+    
+    // Throttle output to prevent UI freezing
+    const now = Date.now();
+    const timeSinceLastOutput = now - this.lastOutputTime;
+    
+    if (timeSinceLastOutput >= this.OUTPUT_THROTTLE_MS) {
+      this.flushClaudeOutput();
+    } else {
+      if (!this.outputTimer) {
+        const delay = this.OUTPUT_THROTTLE_MS - timeSinceLastOutput;
+        this.outputTimer = setTimeout(() => {
+          this.flushClaudeOutput();
+        }, delay);
       }
     }
     
+    // Set up auto-clear timer
+    if (!this.autoClearTimer) {
+      this.autoClearTimer = setTimeout(() => {
+        this.clearClaudeOutput();
+      }, this.OUTPUT_AUTO_CLEAR_MS);
+    }
+  }
+
+  flushClaudeOutput() {
+    if (this.currentScreenBuffer.length === 0) {
+      return;
+    }
+    
+    const output = this.currentScreenBuffer;
+    this.lastOutputTime = Date.now();
+    
+    if (this.outputTimer) {
+      clearTimeout(this.outputTimer);
+      this.outputTimer = null;
+    }
+    
+    this.debugLog(`📤 Flushing Claude output (${output.length} chars)`);
+    
     // Always emit raw terminal output for real-time display
-    this.emit('claude-output', rawText);
-    this.debugLog(`📤 Claude output (${data.length} bytes, buffer: ${this.currentScreenBuffer.length} chars)`);
+    this.emit('claude-output', output);
+  }
+
+  clearClaudeOutput() {
+    this.debugLog(`🧹 Auto-clearing Claude output buffer (${this.currentScreenBuffer.length} chars)`);
+    
+    this.outputBuffer = '';
+    this.currentScreenBuffer = '';
+    
+    if (this.outputTimer) {
+      clearTimeout(this.outputTimer);
+      this.outputTimer = null;
+    }
+    if (this.autoClearTimer) {
+      clearTimeout(this.autoClearTimer);
+      this.autoClearTimer = null;
+    }
   }
 
   // Claude-Autopilot style: we handle raw terminal output directly, no JSON message parsing needed
@@ -829,9 +919,15 @@ export class ClaudeSessionManager extends EventEmitter {
       const chunks = Math.ceil(messageBytes / 1024);
       this.log(`📝 Message size: ${messageBytes} bytes (${chunks} chunks)`);
       
-      // Send message in chunks to prevent \r from being included in the same PTY read
-      const CHUNK_SIZE = 1024;
+      // Optimized message chunking - adaptive chunk size and delays
       const messageBuffer = Buffer.from(messageItem.message, 'utf8');
+      const totalSize = messageBuffer.length;
+      
+      // Adaptive chunk size: larger chunks for bigger messages
+      let CHUNK_SIZE = totalSize < 10000 ? 2048 : 4096; // 2KB or 4KB chunks
+      let chunkDelay = totalSize < 10000 ? 100 : 150; // Shorter delays for small messages
+      
+      this.log(`📝 Optimized chunking: ${Math.ceil(totalSize / CHUNK_SIZE)} chunks of ${CHUNK_SIZE} bytes with ${chunkDelay}ms delays`);
       
       for (let i = 0; i < messageBuffer.length; i += CHUNK_SIZE) {
         const chunk = messageBuffer.subarray(i, Math.min(i + CHUNK_SIZE, messageBuffer.length));
@@ -847,8 +943,10 @@ export class ClaudeSessionManager extends EventEmitter {
           });
         });
         
-        // Wait for chunk to be processed by PTY
-        await new Promise(resolve => setTimeout(resolve, 200));
+        // Adaptive delay - shorter for smaller chunks, longer for last chunk
+        const isLastChunk = (i + CHUNK_SIZE >= messageBuffer.length);
+        const delay = isLastChunk ? chunkDelay + 100 : chunkDelay;
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
       
       this.log(`📝 Message sent in ${chunks} chunks`);
@@ -1045,7 +1143,10 @@ export class ClaudeSessionManager extends EventEmitter {
         extendedTimeoutUsed = true;
         
         // Clear current timer and set new one to prevent race condition
-        clearTimeout(timeoutTimer);
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+          timeoutTimer = null;
+        }
         timeoutTimer = setTimeout(() => {
           this.log(`❌ Final timeout after extended period`);
           safeReject(new Error('Extended timeout waiting for Claude to finish processing'));
@@ -1430,6 +1531,20 @@ export class ClaudeSessionManager extends EventEmitter {
       clearTimeout(this.forceKillTimer);
       this.forceKillTimer = null;
     }
+    
+    // Clear output timers (Claude-Autopilot style)
+    if (this.outputTimer) {
+      clearTimeout(this.outputTimer);
+      this.outputTimer = null;
+    }
+    if (this.autoClearTimer) {
+      clearTimeout(this.autoClearTimer);
+      this.autoClearTimer = null;
+    }
+    
+    // Clear output buffers
+    this.outputBuffer = '';
+    this.currentScreenBuffer = '';
 
     if (this.pythonProcess) {
       try {

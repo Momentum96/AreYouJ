@@ -4,7 +4,7 @@ import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import net from 'net';
 import apiRoutes from './routes/api.js';
-import { setupWebSocket } from './websocket/index.js';
+import { setupWebSocket, cleanupWebSocket } from './websocket/index.js';
 import { getClaudeSession } from './claude/session-manager.js';
 
 const app = express();
@@ -108,7 +108,15 @@ async function startServer() {
     const shutdown = () => {
       console.log('\n⏹️  Shutting down server...');
       
-      // Get Claude session and stop it first
+      // Cleanup WebSocket connections first
+      try {
+        console.log('🔌 Cleaning up WebSocket connections...');
+        cleanupWebSocket();
+      } catch (error) {
+        console.log('Warning: Error cleaning up WebSocket:', error.message);
+      }
+      
+      // Get Claude session and stop it
       try {
         const claudeSession = getClaudeSession();
         if (claudeSession) {

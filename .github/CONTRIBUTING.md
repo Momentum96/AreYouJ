@@ -1,6 +1,6 @@
-# Contributing to AI Project Dashboard
+# Contributing to AreYouJ
 
-Thank you for your interest in contributing to the AI Project Dashboard! 🎉
+Thank you for your interest in contributing to AreYouJ! 🎉
 
 This document provides guidelines and information for contributors to help maintain code quality and ensure a smooth collaboration process.
 
@@ -20,8 +20,8 @@ Before you begin, ensure you have the following installed:
 1. **Fork and clone the repository**
 
    ```bash
-   git clone https://github.com/your-username/ai-project-dashboard.git
-   cd ai-project-dashboard
+   git clone https://github.com/your-username/areyouj.git
+   cd areyouj
    ```
 
 2. **Install dependencies**
@@ -38,7 +38,7 @@ Before you begin, ensure you have the following installed:
 
 4. **Verify the setup**
    - Open http://localhost:5173 in your browser
-   - You should see the AI Project Dashboard interface
+   - You should see the AreYouJ interface
 
 ## 📋 How to Contribute
 
@@ -283,8 +283,8 @@ refactor: extract common API error handling logic
 ### Resources
 
 - **Documentation**: Check the [README](../README.md)
-- **Issues**: Browse [existing issues](https://github.com/Momentum96/ai-project-dashboard/issues)
-- **Discussions**: Join [community discussions](https://github.com/Momentum96/ai-project-dashboard/discussions)
+- **Issues**: Browse [existing issues](https://github.com/Momentum96/areyouj/issues)
+- **Discussions**: Join [community discussions](https://github.com/Momentum96/areyouj/discussions)
 - **Claude Code Docs**: [Official Documentation](https://docs.anthropic.com/en/docs/claude-code)
 
 ### Questions?
@@ -301,7 +301,7 @@ Contributors will be:
 - **Mentioned in the README** (for significant contributions)
 - **Invited to be collaborators** (for consistent contributors)
 
-Thank you for contributing to the AI Project Dashboard! Your efforts help make AI-powered development tools accessible to more developers. 🚀
+Thank you for contributing to AreYouJ! Your efforts help make AI-powered development tools accessible to more developers. 🚀
 
 ---
 

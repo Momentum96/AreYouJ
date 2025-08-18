@@ -1,5 +1,5 @@
 name: ✨ Feature Request
-description: Suggest a new feature or improvement for the AI Project Dashboard
+description: Suggest a new feature or improvement for AreYouJ
 title: "[Feature]: "
 labels: ["enhancement", "needs-triage"]
 assignees:
@@ -10,7 +10,7 @@ body:
       value: |
         Thanks for taking the time to suggest a new feature! 🚀
         
-        Your ideas help make the AI Project Dashboard better for everyone. Please provide as much detail as possible.
+        Your ideas help make AreYouJ better for everyone. Please provide as much detail as possible.
 
   - type: textarea
     id: feature-description

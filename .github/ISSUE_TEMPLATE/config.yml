@@ -1,10 +1,10 @@
 blank_issues_enabled: false
 contact_links:
   - name: 📖 Documentation
-    url: https://github.com/Momentum96/ai-project-dashboard/blob/main/README.md
+    url: https://github.com/Momentum96/areyouj/blob/main/README.md
     about: Check our README for setup instructions and project overview
   - name: 💬 Discussion Forum
-    url: https://github.com/Momentum96/ai-project-dashboard/discussions
+    url: https://github.com/Momentum96/areyouj/discussions
     about: Ask questions and discuss ideas with the community
   - name: 🔧 Claude Code Support
     url: https://docs.anthropic.com/en/docs/claude-code

@@ -156,6 +156,6 @@ If yes, please describe:
 **Ready for review!** 🚀
 
 <!-- 
-Thank you for contributing to the AI Project Dashboard! 
+Thank you for contributing to AreYouJ! 
 Your efforts help make this tool better for all developers working with AI.
 -->

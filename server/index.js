@@ -56,7 +56,7 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    service: 'AI Project Dashboard Backend'
+    service: 'AreYouJ Backend'
   });
 });
 
@@ -89,7 +89,7 @@ async function startServer() {
     });
     
     server.listen(PORT, () => {
-      console.log('🚀 AI Project Dashboard Backend Server');
+      console.log('🚀 AreYouJ Backend Server');
       console.log(`📡 HTTP Server: http://localhost:${PORT}`);
       console.log(`🔌 WebSocket Server: ws://localhost:${PORT}`);
       console.log('');

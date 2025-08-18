@@ -1,8 +1,8 @@
 {
   "projectInfo": {
-    "name": "AI Project Dashboard",
+    "name": "AreYouJ",
     "description": "작업 관리 대시보드 데스크톱 애플리케이션",
-    "location": "/Users/jgw/mac_work/ai-project-dashboard",
+    "location": "/Users/jgw/mac_work/AreYouJ",
     "techStack": {
       "frontend": ["React 19", "TypeScript", "Tailwind CSS"],
       "build": ["Vite"],
@@ -21,32 +21,32 @@
   "fileIndex": {
     "coreFiles": [
       {
-        "path": "/Users/jgw/mac_work/ai-project-dashboard/package.json",
+        "path": "/Users/jgw/mac_work/AreYouJ/package.json",
         "description": "프로젝트 의존성 및 스크립트 정의",
         "importance": "high"
       },
       {
-        "path": "/Users/jgw/mac_work/ai-project-dashboard/src/App.tsx",
+        "path": "/Users/jgw/mac_work/AreYouJ/src/App.tsx",
         "description": "메인 애플리케이션 컴포넌트",
         "importance": "high"
       },
       {
-        "path": "/Users/jgw/mac_work/ai-project-dashboard/src/types/task.ts",
+        "path": "/Users/jgw/mac_work/AreYouJ/src/types/task.ts",
         "description": "Task 데이터 타입 정의",
         "importance": "high"
       },
       {
-        "path": "/Users/jgw/mac_work/ai-project-dashboard/src/components/Dashboard.tsx",
+        "path": "/Users/jgw/mac_work/AreYouJ/src/components/Dashboard.tsx",
         "description": "메인 대시보드 컴포넌트",
         "importance": "high"
       },
       {
-        "path": "/Users/jgw/mac_work/ai-project-dashboard/electron/main.cjs",
+        "path": "/Users/jgw/mac_work/AreYouJ/electron/main.cjs",
         "description": "Electron 메인 프로세스",
         "importance": "high"
       },
       {
-        "path": "/Users/jgw/mac_work/ai-project-dashboard/docs/tasks.json",
+        "path": "/Users/jgw/mac_work/AreYouJ/docs/tasks.json",
         "description": "작업 데이터 파일 (프로젝트 핵심 데이터)",
         "importance": "high"
       }
@@ -95,9 +95,9 @@
   "workingContext": {
     "currentTasks": [],
     "activeFiles": [
-      "/Users/jgw/mac_work/ai-project-dashboard/docs/PROJECT_ANALYSIS.md",
-      "/Users/jgw/mac_work/ai-project-dashboard/docs/tasks.json",
-      "/Users/jgw/mac_work/ai-project-dashboard/README.md"
+      "/Users/jgw/mac_work/AreYouJ/docs/PROJECT_ANALYSIS.md",
+      "/Users/jgw/mac_work/AreYouJ/docs/tasks.json",
+      "/Users/jgw/mac_work/AreYouJ/README.md"
     ],
     "recentChanges": [
       {
@@ -329,7 +329,7 @@
       },
       {
         "date": "2025-07-29T20:13:00.000+0900",
-        "task": "AI Project Dashboard 프로젝트 분석",
+        "task": "AreYouJ 프로젝트 분석",
         "outcome": "성공적으로 완료",
         "deliverables": [
           "PROJECT_ANALYSIS.md 생성",

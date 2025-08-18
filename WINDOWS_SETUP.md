@@ -36,7 +36,7 @@ sudo apt install python3 python3-pip
 
 ### Windows PowerShell/CMD에서:
 ```cmd
-cd ai-project-dashboard
+cd areyouj
 npm install
 npm start
 ```

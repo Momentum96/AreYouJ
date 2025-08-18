@@ -1,4 +1,4 @@
-# AI Project Dashboard - 코드베이스 개선 로드맵
+# AreYouJ - 코드베이스 개선 로드맵
 
 ## 📋 현재 상태 평가
 

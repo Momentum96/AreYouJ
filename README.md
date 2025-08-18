@@ -1,6 +1,9 @@
-# AI Project Dashboard
+# AreYouJ
 
 **A web-based dashboard for AI-assisted project management with real-time Claude integration**
+
+> **Why "AreYouJ"?** 🤔  
+> In Korea, people often ask "너 J야?" (Are you J?) when someone shows highly organized and planning-oriented behavior, referencing the MBTI J trait. This project embodies that same systematic, planning-focused approach—helping you manage AI-driven workflows with the methodical precision of a true J personality type.
 
 Modern task management dashboard with direct Claude CLI integration. Track tasks, interact with Claude in real-time, and manage AI-generated project workflows seamlessly.
 
@@ -20,8 +23,8 @@ Modern task management dashboard with direct Claude CLI integration. Track tasks
 
 ```bash
 # Clone the repository
-git clone https://github.com/Momentum96/ai-project-dashboard.git
-cd ai-project-dashboard
+git clone https://github.com/Momentum96/AreYouJ.git
+cd AreYouJ
 
 # Install dependencies
 npm install
@@ -136,7 +139,7 @@ npm run lint           # ESLint code checking
 ## 📁 Project Structure
 
 ```
-ai-project-dashboard/
+AreYouJ/
 ├── 🌐 Frontend (React + TypeScript)
 │   ├── src/
 │   │   ├── components/
@@ -313,12 +316,12 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/Momentum96/ai-project-dashboard/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Momentum96/ai-project-dashboard/discussions)
+- **Issues**: [GitHub Issues](https://github.com/Momentum96/AreYouJ/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Momentum96/AreYouJ/discussions)
 - **Documentation**: Check the `docs/` folder for detailed guides
 
 ---
 
 **Happy coding with AI assistance! 🤖✨**
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Momentum96/ai-project-dashboard)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Momentum96/AreYouJ)

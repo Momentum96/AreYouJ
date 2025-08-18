@@ -320,3 +320,5 @@ This project is open source and available under the [MIT License](LICENSE).
 ---
 
 **Happy coding with AI assistance! 🤖✨**
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Momentum96/ai-project-dashboard)

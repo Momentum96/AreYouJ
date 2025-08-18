@@ -29,6 +29,15 @@ export class ClaudeSessionManager extends EventEmitter {
     this.lastStopTime = 0;
     this.currentWorkingDirectory = null; // Current working directory for queue management
     
+    // Output throttling and auto-clear (Claude-Autopilot style)
+    this.outputBuffer = '';
+    this.outputTimer = null;
+    this.autoClearTimer = null;
+    this.lastOutputTime = 0;
+    this.OUTPUT_THROTTLE_MS = 1000; // 1 second throttle
+    this.OUTPUT_AUTO_CLEAR_MS = 30000; // 30 seconds auto-clear
+    this.OUTPUT_MAX_BUFFER_SIZE = 100000; // 100KB max buffer
+    
     // Debug logging
     this.debugLogFile = path.join(__dirname, '../logs/claude-debug.log');
     this.ensureLogDirectory();
@@ -580,45 +589,99 @@ export class ClaudeSessionManager extends EventEmitter {
     const rawText = data.toString();
     this.lastActivity = Date.now();
     
-    // Update current screen buffer for prompt analysis (Claude-Autopilot style)
+    // Send to throttled output system (Claude-Autopilot style)
+    this.sendClaudeOutput(rawText);
+  }
+
+  // Claude-Autopilot style output handling with throttling and auto-clear
+  sendClaudeOutput(output) {
+    this.outputBuffer += output;
+    
+    // Prevent buffer overflow
+    if (this.outputBuffer.length > this.OUTPUT_MAX_BUFFER_SIZE) {
+      const oldLength = this.outputBuffer.length;
+      this.outputBuffer = this.outputBuffer.substring(this.outputBuffer.length - (this.OUTPUT_MAX_BUFFER_SIZE * 0.75));
+      this.debugLog(`📦 Output buffer too large (${oldLength} chars), truncating to ${this.outputBuffer.length} chars`);
+    }
+    
+    // Handle clear screen patterns
     const clearScreenPatterns = ['\x1b[2J', '\x1b[H\x1b[2J', '\x1b[2J\x1b[H', '\x1b[1;1H\x1b[2J', '\x1b[2J\x1b[1;1H', '\x1b[3J'];
     let foundClearScreen = false;
+    let lastClearScreenIndex = -1;
     
     for (const pattern of clearScreenPatterns) {
-      if (rawText.includes(pattern)) {
+      const index = this.outputBuffer.lastIndexOf(pattern);
+      if (index > lastClearScreenIndex) {
+        lastClearScreenIndex = index;
         foundClearScreen = true;
-        break;
       }
     }
     
     if (foundClearScreen) {
-      // Clear screen detected - reset screen buffer
-      this.currentScreenBuffer = rawText;
       this.debugLog(`🖥️  Clear screen detected - reset screen buffer`);
+      const newScreen = this.outputBuffer.substring(lastClearScreenIndex);
+      this.currentScreenBuffer = newScreen;
+      this.outputBuffer = this.currentScreenBuffer;
     } else {
-      // Append to current screen buffer
-      if (!this.currentScreenBuffer) {
-        this.currentScreenBuffer = '';
-      }
-      this.currentScreenBuffer += rawText;
-      
-      // Prevent memory issues with large buffers - more aggressive trimming
-      if (this.currentScreenBuffer.length > 30000) {
-        const oldLength = this.currentScreenBuffer.length;
-        this.currentScreenBuffer = this.currentScreenBuffer.slice(-20000);
-        this.debugLog(`📋 Screen buffer trimmed: ${oldLength} → ${this.currentScreenBuffer.length} chars`);
-        
-        // Suggest garbage collection for large buffer trims
-        if (oldLength > 100000 && global.gc) {
-          setImmediate(() => global.gc());
-          this.debugLog(`🗑️ Garbage collection suggested after large buffer trim`);
-        }
+      this.currentScreenBuffer = this.outputBuffer;
+    }
+    
+    // Throttle output to prevent UI freezing
+    const now = Date.now();
+    const timeSinceLastOutput = now - this.lastOutputTime;
+    
+    if (timeSinceLastOutput >= this.OUTPUT_THROTTLE_MS) {
+      this.flushClaudeOutput();
+    } else {
+      if (!this.outputTimer) {
+        const delay = this.OUTPUT_THROTTLE_MS - timeSinceLastOutput;
+        this.outputTimer = setTimeout(() => {
+          this.flushClaudeOutput();
+        }, delay);
       }
     }
     
+    // Set up auto-clear timer
+    if (!this.autoClearTimer) {
+      this.autoClearTimer = setTimeout(() => {
+        this.clearClaudeOutput();
+      }, this.OUTPUT_AUTO_CLEAR_MS);
+    }
+  }
+
+  flushClaudeOutput() {
+    if (this.currentScreenBuffer.length === 0) {
+      return;
+    }
+    
+    const output = this.currentScreenBuffer;
+    this.lastOutputTime = Date.now();
+    
+    if (this.outputTimer) {
+      clearTimeout(this.outputTimer);
+      this.outputTimer = null;
+    }
+    
+    this.debugLog(`📤 Flushing Claude output (${output.length} chars)`);
+    
     // Always emit raw terminal output for real-time display
-    this.emit('claude-output', rawText);
-    this.debugLog(`📤 Claude output (${data.length} bytes, buffer: ${this.currentScreenBuffer.length} chars)`);
+    this.emit('claude-output', output);
+  }
+
+  clearClaudeOutput() {
+    this.debugLog(`🧹 Auto-clearing Claude output buffer (${this.currentScreenBuffer.length} chars)`);
+    
+    this.outputBuffer = '';
+    this.currentScreenBuffer = '';
+    
+    if (this.outputTimer) {
+      clearTimeout(this.outputTimer);
+      this.outputTimer = null;
+    }
+    if (this.autoClearTimer) {
+      clearTimeout(this.autoClearTimer);
+      this.autoClearTimer = null;
+    }
   }
 
   // Claude-Autopilot style: we handle raw terminal output directly, no JSON message parsing needed
@@ -1430,6 +1493,20 @@ export class ClaudeSessionManager extends EventEmitter {
       clearTimeout(this.forceKillTimer);
       this.forceKillTimer = null;
     }
+    
+    // Clear output timers (Claude-Autopilot style)
+    if (this.outputTimer) {
+      clearTimeout(this.outputTimer);
+      this.outputTimer = null;
+    }
+    if (this.autoClearTimer) {
+      clearTimeout(this.autoClearTimer);
+      this.autoClearTimer = null;
+    }
+    
+    // Clear output buffers
+    this.outputBuffer = '';
+    this.currentScreenBuffer = '';
 
     if (this.pythonProcess) {
       try {

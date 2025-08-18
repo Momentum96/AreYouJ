@@ -4,6 +4,11 @@ import { getClaudeSession } from '../claude/session-manager.js';
 import { getCurrentClaudeOutput } from '../routes/api.js';
 
 let connectedClients = new Set();
+let heartbeatInterval = null;
+
+// Heartbeat configuration
+const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+const CLIENT_TIMEOUT = 60000; // 60 seconds
 
 export function setupWebSocket(wss) {
   const claudeSession = getClaudeSession();
@@ -11,8 +16,16 @@ export function setupWebSocket(wss) {
   // Setup Claude session event listeners for WebSocket broadcasting
   setupClaudeSessionEvents(claudeSession);
   
+  // Setup heartbeat mechanism
+  setupHeartbeat();
+  
   wss.on('connection', (ws, req) => {
     console.log(`🔌 WebSocket client connected from ${req.socket.remoteAddress}`);
+    
+    // Initialize client metadata
+    ws.isAlive = true;
+    ws.lastPong = Date.now();
+    
     connectedClients.add(ws);
     
     // Get current Claude output from API routes module
@@ -44,9 +57,15 @@ export function setupWebSocket(wss) {
       }
     });
     
+    // Handle pong responses for heartbeat
+    ws.on('pong', () => {
+      ws.isAlive = true;
+      ws.lastPong = Date.now();
+    });
+    
     // Handle client disconnect
-    ws.on('close', () => {
-      console.log('🔌 WebSocket client disconnected');
+    ws.on('close', (code, reason) => {
+      console.log(`🔌 WebSocket client disconnected (code: ${code}, reason: ${reason})`);
       connectedClients.delete(ws);
     });
     
@@ -56,6 +75,70 @@ export function setupWebSocket(wss) {
       connectedClients.delete(ws);
     });
   });
+}
+
+// Setup heartbeat mechanism to detect dead connections
+function setupHeartbeat() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+  }
+  
+  heartbeatInterval = setInterval(() => {
+    const now = Date.now();
+    const deadConnections = [];
+    
+    connectedClients.forEach(ws => {
+      if (!ws.isAlive || (now - ws.lastPong) > CLIENT_TIMEOUT) {
+        console.log('🔌 Detected dead WebSocket connection, terminating...');
+        deadConnections.push(ws);
+        return;
+      }
+      
+      // Send ping to check if connection is still alive
+      ws.isAlive = false;
+      try {
+        ws.ping();
+      } catch (error) {
+        console.error('Failed to ping WebSocket client:', error);
+        deadConnections.push(ws);
+      }
+    });
+    
+    // Clean up dead connections
+    deadConnections.forEach(ws => {
+      try {
+        ws.terminate();
+      } catch (error) {
+        console.error('Error terminating dead connection:', error);
+      }
+      connectedClients.delete(ws);
+    });
+    
+    if (deadConnections.length > 0) {
+      console.log(`🧹 Cleaned up ${deadConnections.length} dead WebSocket connections`);
+    }
+  }, HEARTBEAT_INTERVAL);
+}
+
+// Cleanup function for graceful shutdown
+export function cleanupWebSocket() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+  
+  connectedClients.forEach(ws => {
+    try {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close(1001, 'Server shutting down');
+      }
+    } catch (error) {
+      console.error('Error closing WebSocket connection:', error);
+    }
+  });
+  
+  connectedClients.clear();
+  console.log('🔌 WebSocket cleanup completed');
 }
 
 function setupClaudeSessionEvents(claudeSession) {
@@ -165,24 +248,59 @@ function handleWebSocketMessage(ws, message) {
 
 // Broadcast message to all connected clients
 export function broadcastToClients(message) {
+  if (connectedClients.size === 0) {
+    return; // No clients to broadcast to
+  }
+  
   const messageString = JSON.stringify({
     ...message,
     timestamp: new Date().toISOString()
   });
   
+  const deadConnections = [];
+  
   connectedClients.forEach(ws => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(messageString);
+    try {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(messageString);
+      } else if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+        deadConnections.push(ws);
+      }
+    } catch (error) {
+      console.error('Error broadcasting to WebSocket client:', error);
+      deadConnections.push(ws);
     }
   });
+  
+  // Clean up dead connections
+  deadConnections.forEach(ws => {
+    connectedClients.delete(ws);
+  });
+  
+  if (deadConnections.length > 0) {
+    console.log(`🧹 Removed ${deadConnections.length} dead connections during broadcast`);
+  }
 }
 
 // Send message to specific client
 export function sendToClient(ws, message) {
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({
-      ...message,
-      timestamp: new Date().toISOString()
-    }));
+  try {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        ...message,
+        timestamp: new Date().toISOString()
+      }));
+      return true;
+    } else {
+      console.warn('Attempted to send message to non-open WebSocket connection');
+      return false;
+    }
+  } catch (error) {
+    console.error('Error sending message to WebSocket client:', error);
+    // Remove from connected clients if it's in the set
+    if (connectedClients.has(ws)) {
+      connectedClients.delete(ws);
+    }
+    return false;
   }
 }

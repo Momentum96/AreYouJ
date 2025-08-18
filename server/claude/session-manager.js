@@ -462,10 +462,22 @@ export class ClaudeSessionManager extends EventEmitter {
       this.log(`Executing: ${args.join(' ')}`);
       this.log(`Working directory: ${projectHomePath}`);
 
-      // Spawn Python process (Claude-Autopilot style)
+      // Create filtered environment for security
+      const safeEnv = {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        USER: process.env.USER,
+        PYTHONPATH: process.env.PYTHONPATH,
+        PYTHONUNBUFFERED: '1',
+        // Add any other necessary environment variables
+        LANG: process.env.LANG,
+        LC_ALL: process.env.LC_ALL
+      };
+
+      // Spawn Python process with filtered environment (Claude-Autopilot style)
       this.pythonProcess = spawn(args[0], args.slice(1), {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, PYTHONUNBUFFERED: '1' },
+        env: safeEnv,
         detached: false
       });
 
@@ -597,11 +609,26 @@ export class ClaudeSessionManager extends EventEmitter {
   sendClaudeOutput(output) {
     this.outputBuffer += output;
     
-    // Prevent buffer overflow
+    // Prevent buffer overflow with more memory-efficient approach
     if (this.outputBuffer.length > this.OUTPUT_MAX_BUFFER_SIZE) {
       const oldLength = this.outputBuffer.length;
-      this.outputBuffer = this.outputBuffer.substring(this.outputBuffer.length - (this.OUTPUT_MAX_BUFFER_SIZE * 0.75));
+      const targetSize = Math.floor(this.OUTPUT_MAX_BUFFER_SIZE * 0.75);
+      
+      // Use slice which is more memory efficient than substring
+      // and explicitly trigger garbage collection hint
+      const trimmedBuffer = this.outputBuffer.slice(-targetSize);
+      this.outputBuffer = null; // Help GC by nullifying old reference
+      this.outputBuffer = trimmedBuffer;
+      
       this.debugLog(`📦 Output buffer too large (${oldLength} chars), truncating to ${this.outputBuffer.length} chars`);
+      
+      // Suggest garbage collection for large buffer operations
+      if (oldLength > 200000 && global.gc) {
+        setImmediate(() => {
+          global.gc();
+          this.debugLog(`🗑️ Garbage collection triggered after large buffer trim`);
+        });
+      }
     }
     
     // Handle clear screen patterns
@@ -892,9 +919,15 @@ export class ClaudeSessionManager extends EventEmitter {
       const chunks = Math.ceil(messageBytes / 1024);
       this.log(`📝 Message size: ${messageBytes} bytes (${chunks} chunks)`);
       
-      // Send message in chunks to prevent \r from being included in the same PTY read
-      const CHUNK_SIZE = 1024;
+      // Optimized message chunking - adaptive chunk size and delays
       const messageBuffer = Buffer.from(messageItem.message, 'utf8');
+      const totalSize = messageBuffer.length;
+      
+      // Adaptive chunk size: larger chunks for bigger messages
+      let CHUNK_SIZE = totalSize < 10000 ? 2048 : 4096; // 2KB or 4KB chunks
+      let chunkDelay = totalSize < 10000 ? 100 : 150; // Shorter delays for small messages
+      
+      this.log(`📝 Optimized chunking: ${Math.ceil(totalSize / CHUNK_SIZE)} chunks of ${CHUNK_SIZE} bytes with ${chunkDelay}ms delays`);
       
       for (let i = 0; i < messageBuffer.length; i += CHUNK_SIZE) {
         const chunk = messageBuffer.subarray(i, Math.min(i + CHUNK_SIZE, messageBuffer.length));
@@ -910,8 +943,10 @@ export class ClaudeSessionManager extends EventEmitter {
           });
         });
         
-        // Wait for chunk to be processed by PTY
-        await new Promise(resolve => setTimeout(resolve, 200));
+        // Adaptive delay - shorter for smaller chunks, longer for last chunk
+        const isLastChunk = (i + CHUNK_SIZE >= messageBuffer.length);
+        const delay = isLastChunk ? chunkDelay + 100 : chunkDelay;
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
       
       this.log(`📝 Message sent in ${chunks} chunks`);
@@ -1108,7 +1143,10 @@ export class ClaudeSessionManager extends EventEmitter {
         extendedTimeoutUsed = true;
         
         // Clear current timer and set new one to prevent race condition
-        clearTimeout(timeoutTimer);
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+          timeoutTimer = null;
+        }
         timeoutTimer = setTimeout(() => {
           this.log(`❌ Final timeout after extended period`);
           safeReject(new Error('Extended timeout waiting for Claude to finish processing'));

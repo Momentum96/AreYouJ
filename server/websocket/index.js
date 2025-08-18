@@ -104,12 +104,29 @@ function setupHeartbeat() {
       }
     });
     
-    // Clean up dead connections
+    // Clean up dead connections gracefully
     deadConnections.forEach(ws => {
       try {
-        ws.terminate();
+        // Try graceful close first
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close(1001, 'Connection timeout');
+          
+          // Fallback to terminate after short delay if close doesn't work
+          setTimeout(() => {
+            if (ws.readyState !== WebSocket.CLOSED) {
+              ws.terminate();
+            }
+          }, 1000);
+        } else {
+          ws.terminate();
+        }
       } catch (error) {
-        console.error('Error terminating dead connection:', error);
+        console.error('Error closing dead connection:', error);
+        try {
+          ws.terminate();
+        } catch (terminateError) {
+          console.error('Error terminating connection:', terminateError);
+        }
       }
       connectedClients.delete(ws);
     });

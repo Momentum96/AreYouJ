@@ -152,6 +152,18 @@ export function containsClearScreen(output) {
     return output.includes('\x1b[2J') || output.includes('\x1b[3J') || output.includes('\x1b[H');
 }
 
+// Simple hash function for content comparison (Claude-Autopilot style)
+function simpleHash(str) {
+    let hash = 0;
+    if (str.length === 0) return hash;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32-bit integer
+    }
+    return hash.toString();
+}
+
 // Claude Terminal Renderer Class (Claude-Autopilot style)
 export class ClaudeTerminalRenderer {
     constructor() {
@@ -159,22 +171,32 @@ export class ClaudeTerminalRenderer {
         this.lastRenderedContent = '';
         this.lastParsedContent = '';
         this.lastParsedHtml = '';
-        this.CLAUDE_RENDER_THROTTLE_MS = 100; // Throttle rendering
+        this.lastContentHash = ''; // Hash-based duplicate detection
+        this.CLAUDE_RENDER_THROTTLE_MS = 500; // Throttle rendering (Claude-Autopilot style)
         this.lastClaudeRenderTime = 0;
         this.pendingClaudeOutput = '';
         this.claudeRenderTimer = null;
     }
 
-    // Main render function (exactly like Claude-Autopilot)
+    // Main render function with hash-based duplicate detection (Claude-Autopilot style)
     renderOutput(output, terminalElement) {
         if (!terminalElement) return;
 
         try {
+            // Hash-based duplicate detection (Claude-Autopilot style)
+            const contentHash = simpleHash(output);
+            if (contentHash === this.lastContentHash && !containsClearScreen(output)) {
+                // Content hasn't changed, skip rendering
+                console.log('📋 Skipping render - content unchanged (hash match)');
+                return;
+            }
+
             // Check if this output contains screen clearing commands
             if (containsClearScreen(output)) {
                 // Clear screen - replace entire content
                 this.claudeContent = output;
                 this.lastRenderedContent = output;
+                this.lastContentHash = contentHash;
                 terminalElement.innerHTML = '';
                 
                 // Reset cache since this is a new screen
@@ -191,46 +213,102 @@ export class ClaudeTerminalRenderer {
                 outputElement.style.cssText = 'white-space: pre; word-wrap: break-word; line-height: 1.4; font-family: inherit;';
                 outputElement.innerHTML = htmlOutput;
                 terminalElement.appendChild(outputElement);
+                
+                // Add visual feedback effect for clear screen (Claude-Autopilot style)
+                this.addVisualFeedback(terminalElement);
             } else {
                 // No clear screen - this is the complete current screen content from backend
-                // Only update if content has actually changed
-                if (output === this.lastRenderedContent) {
-                    return; // No change, skip rendering
-                }
-                
                 this.claudeContent = output;
                 this.lastRenderedContent = output;
+                this.lastContentHash = contentHash;
                 
                 let htmlOutput;
                 if (output === this.lastParsedContent && this.lastParsedHtml) {
                     // Use cached result
                     htmlOutput = this.lastParsedHtml;
+                    console.log('📋 Using cached ANSI parsing result');
                 } else {
                     // Parse new content
                     htmlOutput = parseAnsiToHtml(this.claudeContent);
                     this.lastParsedContent = output;
                     this.lastParsedHtml = htmlOutput;
+                    console.log('🔄 Parsing ANSI content');
                 }
                 
-                // Replace the entire content safely
-                terminalElement.innerHTML = '';
-                const outputElement = document.createElement('div');
-                outputElement.style.cssText = 'white-space: pre; word-wrap: break-word; line-height: 1.4; font-family: inherit;';
-                outputElement.innerHTML = htmlOutput;
-                terminalElement.appendChild(outputElement);
+                // Optimize DOM updates - only update if HTML content actually changed
+                let existingElement = terminalElement.querySelector('.claude-content');
+                if (!existingElement) {
+                    // First time setup
+                    terminalElement.innerHTML = '';
+                    existingElement = document.createElement('div');
+                    existingElement.className = 'claude-content';
+                    existingElement.style.cssText = 'white-space: pre; word-wrap: break-word; line-height: 1.4; font-family: inherit;';
+                    terminalElement.appendChild(existingElement);
+                }
+                
+                // Only update DOM if HTML content actually changed (Claude-Autopilot style)
+                if (existingElement.innerHTML !== htmlOutput) {
+                    existingElement.innerHTML = htmlOutput;
+                    console.log('🎨 Updated DOM with new content');
+                    
+                    // Add visual feedback effect (Claude-Autopilot style)
+                    this.addVisualFeedback(terminalElement);
+                } else {
+                    console.log('📋 DOM unchanged - HTML content identical');
+                }
             }
 
-            // Auto-scroll to bottom (like a real terminal)
-            // Check if parent container has overflow-auto and scroll that instead
+            // Smart auto-scroll (only if user was at bottom)
             const scrollContainer = terminalElement.parentElement;
             if (scrollContainer && scrollContainer.classList.contains('overflow-auto')) {
-                scrollContainer.scrollTop = scrollContainer.scrollHeight;
+                // Check if user was at bottom before content change
+                const wasAtBottom = scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - 50;
+                if (wasAtBottom || containsClearScreen(output)) {
+                    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+                }
             } else {
-                terminalElement.scrollTop = terminalElement.scrollHeight;
+                const wasAtBottom = terminalElement.scrollTop + terminalElement.clientHeight >= terminalElement.scrollHeight - 50;
+                if (wasAtBottom || containsClearScreen(output)) {
+                    terminalElement.scrollTop = terminalElement.scrollHeight;
+                }
             }
             
         } catch (error) {
             console.error('Terminal rendering error:', error);
+        }
+    }
+
+    // Visual feedback effect for terminal updates (Claude-Autopilot style)
+    addVisualFeedback(terminalElement) {
+        if (!terminalElement) return;
+        
+        try {
+            // Find the scroll container (usually the parent with overflow-auto)
+            const scrollContainer = terminalElement.parentElement;
+            const targetElement = (scrollContainer && scrollContainer.classList.contains('overflow-auto')) 
+                ? scrollContainer 
+                : terminalElement;
+            
+            // Store original styles
+            const originalBorderColor = targetElement.style.borderColor;
+            const originalBoxShadow = targetElement.style.boxShadow;
+            
+            // Apply feedback effect (green flash - Claude-Autopilot style)
+            targetElement.style.borderColor = '#00ff88';
+            targetElement.style.boxShadow = '0 0 20px rgba(0, 255, 136, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1)';
+            
+            // Restore original styles after delay
+            setTimeout(() => {
+                try {
+                    targetElement.style.borderColor = originalBorderColor || '#4a9eff';
+                    targetElement.style.boxShadow = originalBoxShadow || '0 0 20px rgba(74, 158, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1)';
+                } catch (error) {
+                    // Ignore errors if element was removed
+                }
+            }, 800);
+            
+        } catch (error) {
+            console.error('Visual feedback error:', error);
         }
     }
 
@@ -271,7 +349,7 @@ export class ClaudeTerminalRenderer {
         if (terminalElement) {
             terminalElement.innerHTML = '<div style="color: #666; font-style: italic;">Terminal cleared...</div>';
             
-            // Auto-scroll to bottom after clear
+            // Always scroll to bottom after clear (clear is intentional)
             const scrollContainer = terminalElement.parentElement;
             if (scrollContainer && scrollContainer.classList.contains('overflow-auto')) {
                 scrollContainer.scrollTop = scrollContainer.scrollHeight;
@@ -283,5 +361,6 @@ export class ClaudeTerminalRenderer {
         this.lastRenderedContent = '';
         this.lastParsedContent = '';
         this.lastParsedHtml = '';
+        this.lastContentHash = ''; // Reset hash on clear
     }
 }

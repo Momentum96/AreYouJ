@@ -1000,34 +1000,73 @@ export class ClaudeSessionManager extends EventEmitter {
       }
 
     const DEBOUNCE_THRESHOLD_MS = 2000;
-    const TIMEOUT_MS = 600000; // 10 minutes timeout for long-running tasks
+    const TIMEOUT_MS = 3600000; // 1 hour timeout as safety net (Claude-Autopilot style)
     let waitingForPermission = false;
     let screenAnalysisTimer = null;
     let timeoutTimer = null;
     let lastOutputTime = Date.now();
 
     const readyPatterns = [
+      // Primary indicators (most reliable - Claude-Autopilot style)
       /\? for shortcuts/i,
+      /\\u001b\[2m\\u001b\[38;5;244m│\\u001b\[39m\\u001b\[22m\s>/,
+      
+      // Secondary indicators (common prompt patterns)
+      />\s*$/,
+      /\$\s*$/,
+      
+      // Claude-specific indicators
       /Bypassing Permissions/i,
       /Welcome to Claude Code/i,
-      /claude/i,
-      /pwd:/i,
-      /cwd:/i,
+      
+      // Terminal prompt indicators
       /\u276F/,  // Unicode prompt character
       /❯/,      // Alternative prompt character
-      /\u001b\[2m\u001b\[38;5;244m│\u001b\[39m\u001b\[22m\s>/,
-      />\s*$/,
-      /\$\s*$/
+      
+      // Enhanced context indicators
+      /pwd:/i,
+      /cwd:/i,
+      /claude.*ready/i,
+      /claude.*>.*$/im,
+      
+      // ANSI escape sequence patterns for prompts
+      /\u001b\[.*?m\s*>\s*\u001b\[.*?m/,
+      /\u001b\[\d+;\d+m.*>\s*$/,
+      
+      // Multi-line prompt detection
+      /^.*\n.*>\s*$/m,
+      /^.*│.*>\s*$/m,
+      
+      // Fallback patterns for edge cases
+      /Ready for input/i,
+      /Press.*key/i,
+      /Continue.*press/i
     ];
 
+    // Enhanced permission prompt detection (Claude-Autopilot style)
     const permissionPrompts = [
+      // Direct permission requests
       'Do you want to make this edit to',
       'Do you want to create', 
       'Do you want to delete',
       'Do you want to read',
       'Would you like to',
       'Proceed with',
-      'Continue?'
+      'Continue?',
+      
+      // Additional permission patterns from Claude-Autopilot
+      'Press Enter to continue',
+      'Press any key to continue',
+      'Confirm this action',
+      'Are you sure',
+      'Type y to confirm',
+      'Type yes to proceed',
+      
+      // Claude Code specific patterns
+      'Allow Claude Code to',
+      'Grant permission to',
+      'Approve this',
+      'Review and confirm'
     ];
 
     const cleanup = () => {
@@ -1047,51 +1086,103 @@ export class ClaudeSessionManager extends EventEmitter {
       
       this.debugLog(`🔍 Analyzing screen (${screenBuffer.length} chars, ${timeSinceLastOutput}ms since last output)`);
       
+      // Enhanced permission prompt detection with context analysis (moved up for scope)
+      const detectedPrompts = permissionPrompts.filter(prompt => 
+        screenBuffer.toLowerCase().includes(prompt.toLowerCase())
+      );
+      
+      const hasPermissionPrompt = detectedPrompts.length > 0;
+      const hasMultiplePrompts = detectedPrompts.length > 1;
+      
+      // Additional context clues for permission prompts
+      const hasPermissionContext = screenBuffer.includes('[Y/n]') || 
+                                  screenBuffer.includes('[y/N]') ||
+                                  screenBuffer.includes('(y/n)') ||
+                                  screenBuffer.includes('Enter/Space/Escape') ||
+                                  /\[(yes|no|y|n|enter|space|esc)\]/i.test(screenBuffer);
+      
       if (waitingForPermission) {
-        if (screenBuffer.includes('? for shortcuts')) {
-          this.log(`✅ Permission resolved - back to normal processing`);
+        // Enhanced permission resolution detection
+        const permissionResolved = screenBuffer.includes('? for shortcuts') ||
+                                  /operation.*complete/i.test(screenBuffer) ||
+                                  /task.*finished/i.test(screenBuffer) ||
+                                  /changes.*applied/i.test(screenBuffer) ||
+                                  /successfully/i.test(screenBuffer) ||
+                                  // Check if we're back to a normal prompt state
+                                  readyPatterns.some(pattern => pattern.test(screenBuffer));
+        
+        if (permissionResolved) {
+          this.log(`✅ Permission resolved - back to normal processing (detected completion indicators)`);
           waitingForPermission = false;
         } else {
-          this.debugLog(`🔐 Still waiting for permission response`);
+          // Check if permission prompt is still active
+          const stillWaitingForInput = detectedPrompts.length > 0 || hasPermissionContext ||
+                                     screenBuffer.includes('waiting') ||
+                                     screenBuffer.includes('pending');
+          
+          this.debugLog(`🔐 Still waiting for permission response (active prompts: ${stillWaitingForInput})`);
           screenAnalysisTimer = setTimeout(analyzeCurrentScreen, 500);
           return;
         }
       }
       
-      const hasPermissionPrompt = permissionPrompts.some(prompt => 
-        screenBuffer.includes(prompt)
-      );
-      
-      if (hasPermissionPrompt && !waitingForPermission) {
-        this.log(`🔐 Permission prompt detected in screen analysis`);
+      if ((hasPermissionPrompt || hasPermissionContext) && !waitingForPermission) {
+        const promptDetails = detectedPrompts.length > 0 ? detectedPrompts.join(', ') : 'context indicators';
+        this.log(`🔐 Permission prompt detected: ${promptDetails} (multiple: ${hasMultiplePrompts}, context: ${hasPermissionContext})`);
         waitingForPermission = true;
         screenAnalysisTimer = setTimeout(analyzeCurrentScreen, 500);
         return;
       }
       
-      const isReady = readyPatterns.some(pattern => {
+      // Enhanced pattern matching with priority system (Claude-Autopilot style)
+      let matchedPattern = null;
+      let matchPriority = 0;
+      
+      for (let i = 0; i < readyPatterns.length; i++) {
+        const pattern = readyPatterns[i];
         const jsonScreen = JSON.stringify(screenBuffer);
-        return pattern.test(jsonScreen) || pattern.test(screenBuffer);
-      });
+        const directMatch = pattern.test(screenBuffer);
+        const jsonMatch = pattern.test(jsonScreen);
+        
+        if (directMatch || jsonMatch) {
+          // Primary patterns (index 0-1) have highest priority
+          const priority = i < 2 ? 3 : (i < 4 ? 2 : 1);
+          
+          if (priority > matchPriority) {
+            matchedPattern = pattern;
+            matchPriority = priority;
+          }
+          
+          this.debugLog(`🎯 Pattern matched: ${pattern.source} (direct: ${directMatch}, json: ${jsonMatch}, priority: ${priority})`);
+        }
+      }
+      
+      const isReady = matchedPattern !== null;
       
       if (isReady && timeSinceLastOutput >= DEBOUNCE_THRESHOLD_MS) {
-        this.log(`✅ Claude is ready! Pattern detected and ${timeSinceLastOutput}ms of stability`);
-        
-        // Claude-Autopilot style: resolve promise to indicate completion
+        this.log(`✅ Claude is ready! Pattern: ${matchedPattern.source} (priority: ${matchPriority}, stable for: ${timeSinceLastOutput}ms)`);
         safeResolve();
       } else if (isReady) {
-        this.debugLog(`⏳ Ready pattern detected but waiting for stability (${timeSinceLastOutput}ms < ${DEBOUNCE_THRESHOLD_MS}ms)`);
+        this.debugLog(`⏳ Ready pattern detected but waiting for stability (${timeSinceLastOutput}ms < ${DEBOUNCE_THRESHOLD_MS}ms, pattern: ${matchedPattern.source})`);
         screenAnalysisTimer = setTimeout(analyzeCurrentScreen, 500);
       } else {
-        // Alternative detection: if we have substantial output and no new output for 4 seconds
-        if (screenBuffer.length > 100 && timeSinceLastOutput >= 4000) {
-          this.log(`✅ Claude is ready (detected by output stabilization)`);
-          
+        // Enhanced alternative detection with multiple criteria (Claude-Autopilot style)
+        const hasSubstantialContent = screenBuffer.length > 100;
+        const hasStabilized = timeSinceLastOutput >= 4000;
+        const looksLikePrompt = screenBuffer.trim().endsWith('>') || screenBuffer.trim().endsWith('$');
+        
+        if (hasSubstantialContent && hasStabilized && looksLikePrompt) {
+          this.log(`✅ Claude is ready (detected by output stabilization + prompt indicators)`);
+          safeResolve();
+          return;
+        } else if (hasSubstantialContent && timeSinceLastOutput >= 8000) {
+          // Extra long stabilization as fallback
+          this.log(`✅ Claude is ready (detected by long stabilization period)`);
           safeResolve();
           return;
         }
         
-        this.debugLog(`⏱️  No ready pattern detected, continuing analysis (${screenBuffer.length} chars, ${timeSinceLastOutput}ms ago)`);
+        this.debugLog(`⏱️ No ready pattern detected, continuing analysis (content: ${hasSubstantialContent}, stable: ${hasStabilized}, prompt-like: ${looksLikePrompt})`);
         screenAnalysisTimer = setTimeout(analyzeCurrentScreen, 500);
       }
     };
@@ -1127,7 +1218,7 @@ export class ClaudeSessionManager extends EventEmitter {
     let extendedTimeoutUsed = false;
     
     timeoutTimer = setTimeout(() => {
-      this.log(`⏱️ Extended timeout after ${TIMEOUT_MS / 1000}s - checking session health`);
+      this.log(`⏱️ Safety timeout check after ${TIMEOUT_MS / 60000} minutes - checking session health`);
       
       // Check if Claude session is still alive
       if (!this.pythonProcess || this.pythonProcess.killed || this.pythonProcess.exitCode !== null) {
@@ -1138,9 +1229,8 @@ export class ClaudeSessionManager extends EventEmitter {
       
       // Check if we're still receiving output (task might still be running)
       const timeSinceLastOutput = Date.now() - lastOutputTime;
-      if (timeSinceLastOutput < 30000 && !extendedTimeoutUsed) { // If output within last 30 seconds and not already extended
-        this.log(`⏳ Still receiving output (${timeSinceLastOutput}ms ago), extending timeout once`);
-        extendedTimeoutUsed = true;
+      if (timeSinceLastOutput < 300000) { // If output within last 5 minutes (more generous)
+        this.log(`⏳ Still receiving output (${Math.round(timeSinceLastOutput/1000)}s ago), extending timeout (Claude-Autopilot style)`);
         
         // Clear current timer and set new one to prevent race condition
         if (timeoutTimer) {
@@ -1148,12 +1238,12 @@ export class ClaudeSessionManager extends EventEmitter {
           timeoutTimer = null;
         }
         timeoutTimer = setTimeout(() => {
-          this.log(`❌ Final timeout after extended period`);
-          safeReject(new Error('Extended timeout waiting for Claude to finish processing'));
-        }, 300000); // Additional 5 minutes
+          this.log(`❌ Safety timeout after extended period (1 hour total)`);
+          safeReject(new Error('Safety timeout - Claude may be stuck or task is extremely long-running'));
+        }, 1800000); // Additional 30 minutes (total becomes 1.5 hours)
       } else {
-        this.log(`❌ No recent output or already extended, timing out`);
-        safeReject(new Error('Timeout waiting for Claude to finish processing'));
+        this.log(`❌ No recent output for ${Math.round(timeSinceLastOutput/1000)}s, timing out`);
+        safeReject(new Error('Timeout - no output from Claude for extended period'));
       }
     }, TIMEOUT_MS);
 

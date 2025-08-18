@@ -160,10 +160,14 @@ export const Automation = () => {
       } else if (message.data.output) {
         // Render full Claude terminal output
         if (terminalRef.current && terminalRenderer.current) {
+          // Check if user was already at the bottom before rendering
+          const wasAtBottom = terminalScrollRef.current ? 
+            (terminalScrollRef.current.scrollTop + terminalScrollRef.current.clientHeight >= terminalScrollRef.current.scrollHeight - 50) : true;
+          
           terminalRenderer.current.renderOutput(message.data.output, terminalRef.current);
           
-          // Auto-scroll to bottom after rendering
-          if (terminalScrollRef.current) {
+          // Only auto-scroll if user was already at bottom (smart scroll)
+          if (wasAtBottom && terminalScrollRef.current) {
             terminalScrollRef.current.scrollTop = terminalScrollRef.current.scrollHeight;
           }
         }

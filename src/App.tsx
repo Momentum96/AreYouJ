@@ -43,9 +43,19 @@ function App() {
       });
       
       if (!response.ok) {
-        throw new Error(
-          `태스크 데이터를 불러오는데 실패했습니다. (${response.status}: ${response.statusText})`
-        );
+        if (response.status === 404) {
+          // tasks.json이 없는 경우 - UI는 표시하되 에러 메시지만 설정
+          const errorData = await response.json();
+          console.log('tasks.json not found, showing empty state');
+          setTasks([]);
+          setProjectPath(errorData.projectHomePath || '');
+          setError('프로젝트에 tasks.json이 없습니다.');
+          return;
+        } else {
+          throw new Error(
+            `태스크 데이터를 불러오는데 실패했습니다. (${response.status}: ${response.statusText})`
+          );
+        }
       }
       const data = await response.json();
 
@@ -157,8 +167,10 @@ function App() {
   }, []);
 
 
-  // 에러 발생 시에만 에러 화면 표시
-  if (error && tasks.length === 0) {
+  // 심각한 에러(서버 연결 실패 등)만 전체 화면으로 표시, tasks.json 없는 것은 UI 내에서 처리
+  const isCriticalError = error && !error.includes('tasks.json') && tasks.length === 0;
+  
+  if (isCriticalError) {
     return (
       <div className="dark w-full h-screen bg-background text-foreground flex items-center justify-center">
         <div className="text-red-400 text-lg">{error}</div>
@@ -233,6 +245,7 @@ function App() {
               appName={__APP_NAME__} 
               isLoadingTasks={isLoadingTasks} 
               onTaskDeleted={() => fetchTasks()} 
+              error={error}
             />
           </ErrorBoundary>
         ) : (

@@ -140,6 +140,25 @@ Generate tasks.json with this structure:
 - Define clear completion criteria in task descriptions
 - Specify acceptance criteria and success metrics
 - Consider edge cases and potential blockers
+
+**JSON Safety Requirements**:
+
+- **Special Character Escaping**: All text fields (`notes`, `details`, `title`, `description`) MUST properly escape JSON special characters:
+  - Double quotes: `"` → `\"`
+  - Backslashes: `\` → `\\`
+  - Newlines: Use `\n` for line breaks
+  - Tabs: Use `\t` for tab characters
+- **String Validation**: Every string value must be properly quoted and terminated
+- **Field Completeness**: All required fields must have valid values (use empty string `""` if no content yet)
+- **Syntax Checking**: Generated JSON must be valid and parseable by `JSON.parse()`
+
+**Common JSON Pitfalls to Avoid**:
+
+- Unescaped quotes in task titles (e.g., `"Create "Login" Component"` → `"Create \"Login\" Component"`)
+- Missing commas between array elements or object properties
+- Trailing commas after last array/object element
+- Unmatched brackets or braces
+- Invalid escape sequences in text content
   </quality_standards>
 
 <timestamp_management>

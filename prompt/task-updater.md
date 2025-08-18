@@ -82,12 +82,35 @@ Progress details: [additional context if needed]
 </info>
 ```
 
+**JSON Safety Requirements**:
+
+- **Special Character Escaping**: ALL text content in JSON fields MUST properly escape special characters:
+  - Double quotes: `"` → `\"`
+  - Backslashes: `\` → `\\`
+  - Control characters: newlines as `\n`, tabs as `\t`
+- **Quote Validation**: Every opening quote must have a matching closing quote
+- **String Termination**: All string values must be properly terminated with quotes
+- **Syntax Verification**: Updated JSON must be valid for `JSON.parse()`
+
+**Critical JSON Error Prevention**:
+
+- **Before Writing**: Always check text content for unescaped quotes
+- **Common Mistakes**: Titles like `Task 1.3 "AuthFlow Context" done` MUST become `Task 1.3 \"AuthFlow Context\" done`
+- **Content Review**: Scan `notes`, `details`, and progress descriptions for embedded quotes
+- **Validation**: Mentally verify JSON syntax before finalizing updates
+
 </status_updating>
 
 <details_documentation>
 **Critical Requirement: Details Field Updates**
 
 When updating tasks to `done` status, you MUST also update the `details` field with comprehensive implementation information. This applies to BOTH parent tasks AND subtasks. The details field uses **Markdown format** and will be rendered in the dashboard for human review.
+
+**JSON Safety for Details Field**:
+- **Escape All Quotes**: Any quotes in Markdown content must be escaped (`"` → `\"`)
+- **Line Breaks**: Use `\n` for line breaks in JSON string
+- **Code Blocks**: Ensure backticks and code samples don't break JSON structure
+- **Special Characters**: Escape backslashes (`\` → `\\`) in file paths and code examples
 
 **Subtask Details Requirements**:
 
@@ -428,6 +451,17 @@ Dependencies: [list of completed dependencies that unblocked this]
 ```json
 { "error": "Task [id] cannot start - missing dependencies: [dep1, dep2]" }
 ```
+
+**JSON Parsing Errors**:
+
+```json
+{ "error": "JSON syntax error in tasks.json - likely unescaped quotes or invalid characters" }
+```
+
+**Prevention Protocol**:
+- **Pre-validation**: Always check content for unescaped quotes before writing
+- **Character Scanning**: Review all user input for `"`, `\`, and control characters
+- **Syntax Testing**: Mentally validate JSON structure before committing changes
 
 </error_handling>
 

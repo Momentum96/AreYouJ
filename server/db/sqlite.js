@@ -332,73 +332,111 @@ class SQLiteManager {
   }
 
   /**
-   * Get all tasks with their subtasks (JSON compatible format)
+   * Get all tasks with their subtasks and dependencies (optimized with JOIN)
+   * @param {Object} options - Query options
+   * @param {number} options.limit - Maximum number of parent tasks to return
+   * @param {number} options.offset - Number of parent tasks to skip
    * @returns {Promise<Object>} - Tasks in JSON format
    */
-  async getAllTasks() {
+  async getAllTasks(options = {}) {
     try {
-      // Get all tasks
-      const allTasks = await this.executeQuery(`
-        SELECT id, title, description, status, priority, notes, details, 
-               parent_id, created_at, updated_at
-        FROM tasks
-        ORDER BY id
-      `);
+      const { limit, offset } = options;
+      
+      // Build optimized query with JOINs
+      let tasksQuery = `
+        SELECT 
+          t.id, t.title, t.description, t.status, t.priority, 
+          t.notes, t.details, t.parent_id, t.created_at, t.updated_at,
+          GROUP_CONCAT(td.dependency_id) as dependencies
+        FROM tasks t
+        LEFT JOIN task_dependencies td ON t.id = td.task_id
+        GROUP BY t.id, t.title, t.description, t.status, t.priority, 
+                 t.notes, t.details, t.parent_id, t.created_at, t.updated_at
+        ORDER BY t.created_at DESC
+      `;
 
-      // Get all dependencies
-      const dependencies = await this.executeQuery(`
-        SELECT task_id, dependency_id 
-        FROM task_dependencies
-      `);
-
-      // Group dependencies by task_id
-      const dependencyMap = {};
-      dependencies.forEach(dep => {
-        if (!dependencyMap[dep.task_id]) {
-          dependencyMap[dep.task_id] = [];
+      // Add pagination for parent tasks only
+      const params = [];
+      if (limit) {
+        tasksQuery += ` LIMIT ?`;
+        params.push(limit);
+        if (offset) {
+          tasksQuery += ` OFFSET ?`;
+          params.push(offset);
         }
-        dependencyMap[dep.task_id].push(dep.dependency_id);
-      });
+      }
 
-      // Separate parent tasks and subtasks
-      const parentTasks = allTasks.filter(task => !task.parent_id);
-      const childTasks = allTasks.filter(task => task.parent_id);
+      const allTasks = await this.executeQuery(tasksQuery, params);
 
-      // Build task hierarchy (JSON compatible)
-      const tasks = parentTasks.map(task => {
-        const subtasks = childTasks
-          .filter(child => child.parent_id === task.id)
-          .map(subtask => ({
-            id: subtask.id,
-            title: subtask.title,
-            description: subtask.description,
-            status: subtask.status,
-            priority: subtask.priority,
-            dependencies: dependencyMap[subtask.id] || [],
-            notes: subtask.notes || '',
-            details: subtask.details || '',
-            createdAt: subtask.created_at,
-            updatedAt: subtask.updated_at
-          }));
-
-        return {
+      // Process results and build hierarchy
+      const parentTasks = [];
+      const childTasks = [];
+      
+      allTasks.forEach(task => {
+        // Parse dependencies
+        const dependencies = task.dependencies 
+          ? task.dependencies.split(',').filter(dep => dep) 
+          : [];
+        
+        const processedTask = {
           id: task.id,
           title: task.title,
           description: task.description,
           status: task.status,
           priority: task.priority,
-          dependencies: dependencyMap[task.id] || [],
+          dependencies: dependencies,
           notes: task.notes || '',
           details: task.details || '',
           createdAt: task.created_at,
-          updatedAt: task.updated_at,
-          subtasks: subtasks
+          updatedAt: task.updated_at
         };
+
+        if (task.parent_id) {
+          processedTask.parent_id = task.parent_id;
+          childTasks.push(processedTask);
+        } else {
+          parentTasks.push(processedTask);
+        }
+      });
+
+      // Build task hierarchy efficiently
+      const taskMap = new Map();
+      
+      // Initialize parent tasks with empty subtasks arrays
+      const tasks = parentTasks.map(task => {
+        const taskWithSubtasks = { ...task, subtasks: [] };
+        taskMap.set(task.id, taskWithSubtasks);
+        return taskWithSubtasks;
+      });
+
+      // Add subtasks to their parents
+      childTasks.forEach(subtask => {
+        const parent = taskMap.get(subtask.parent_id);
+        if (parent) {
+          const { parent_id, ...subtaskWithoutParentId } = subtask;
+          parent.subtasks.push(subtaskWithoutParentId);
+        }
       });
 
       return { tasks };
     } catch (error) {
       console.error('Failed to get all tasks:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get task count for pagination
+   * @returns {Promise<number>} - Total number of parent tasks
+   */
+  async getTaskCount() {
+    try {
+      const result = await this.executeQuery(
+        'SELECT COUNT(*) as count FROM tasks WHERE parent_id IS NULL'
+      );
+      return result[0].count;
+    } catch (error) {
+      console.error('Failed to get task count:', error);
       throw error;
     }
   }
@@ -536,21 +574,6 @@ class SQLiteManager {
     }
   }
 
-  /**
-   * Get count of parent tasks (tasks without parent_id)
-   * @returns {Promise<number>} - Count of parent tasks
-   */
-  async getTaskCount() {
-    try {
-      const result = await this.executeQuery(
-        'SELECT COUNT(*) as count FROM tasks WHERE parent_id IS NULL'
-      );
-      return result[0].count;
-    } catch (error) {
-      console.error('Failed to get task count:', error);
-      throw error;
-    }
-  }
 
   /**
    * Get count of subtasks for a specific parent task
@@ -582,6 +605,127 @@ class SQLiteManager {
   static databaseExists(projectHomePath) {
     const dbPath = path.join(projectHomePath, 'docs', 'tasks.db');
     return fs.existsSync(dbPath);
+  }
+
+  /**
+   * Atomically switch database connection to new project path
+   * @param {string} newProjectHomePath - New project home path
+   * @returns {Promise<boolean>} - Success status
+   */
+  async switchDatabase(newProjectHomePath) {
+    const newDbPath = path.join(newProjectHomePath, 'docs', 'tasks.db');
+    
+    // If already connected to the same path, no need to switch
+    if (this.connectionState === 'connected' && this.dbPath === newDbPath) {
+      console.log('📁 Already connected to target database path');
+      return true;
+    }
+
+    this.connectionState = 'switching';
+    const oldDb = this.db;
+    const oldDbPath = this.dbPath;
+    
+    try {
+      // Ensure target docs directory exists
+      const docsDir = path.dirname(newDbPath);
+      if (!fs.existsSync(docsDir)) {
+        fs.mkdirSync(docsDir, { recursive: true });
+      }
+
+      const dbExists = fs.existsSync(newDbPath);
+
+      // Create new connection first
+      const newDb = await new Promise((resolve, reject) => {
+        const db = new sqlite3.Database(newDbPath, (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(db);
+          }
+        });
+      });
+
+      // If new database, create schema
+      if (!dbExists) {
+        await new Promise((resolve, reject) => {
+          const schema = `
+            -- Main tasks table
+            CREATE TABLE IF NOT EXISTS tasks (
+              id TEXT PRIMARY KEY,
+              title TEXT NOT NULL,
+              description TEXT,
+              status TEXT CHECK (status IN ('pending', 'in-progress', 'done')) DEFAULT 'pending',
+              priority TEXT CHECK (priority IN ('high', 'medium', 'low')) DEFAULT 'medium',
+              notes TEXT,
+              details TEXT DEFAULT '',
+              parent_id TEXT,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (parent_id) REFERENCES tasks(id)
+            );
+
+            -- Task dependencies
+            CREATE TABLE IF NOT EXISTS task_dependencies (
+              task_id TEXT NOT NULL,
+              dependency_id TEXT NOT NULL,
+              PRIMARY KEY (task_id, dependency_id),
+              FOREIGN KEY (task_id) REFERENCES tasks(id),
+              FOREIGN KEY (dependency_id) REFERENCES tasks(id)
+            );
+
+            -- Performance indexes
+            CREATE INDEX IF NOT EXISTS idx_task_status ON tasks(status);
+            CREATE INDEX IF NOT EXISTS idx_task_priority ON tasks(priority);
+            CREATE INDEX IF NOT EXISTS idx_task_parent ON tasks(parent_id);
+            CREATE INDEX IF NOT EXISTS idx_task_updated ON tasks(updated_at);
+          `;
+
+          newDb.exec(schema, (err) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+      }
+
+      // Atomic switch: update references
+      this.db = newDb;
+      this.dbPath = newDbPath;
+      this.connectionState = 'connected';
+      this.lastActivity = Date.now();
+      this._startIdleTimer();
+
+      // Close old connection (if exists)
+      if (oldDb) {
+        await new Promise((resolve) => {
+          oldDb.close((err) => {
+            if (err) {
+              console.warn('Warning: Failed to close old database connection:', err);
+            } else {
+              console.log('📁 Old SQLite connection closed');
+            }
+            resolve();
+          });
+        });
+      }
+
+      console.log(`✅ Successfully switched SQLite database: ${oldDbPath} → ${newDbPath}`);
+      this._resolvePendingRequests();
+      return true;
+
+    } catch (error) {
+      console.error('❌ Failed to switch database:', error);
+      
+      // Restore previous connection state
+      this.db = oldDb;
+      this.dbPath = oldDbPath;
+      this.connectionState = oldDb ? 'connected' : 'disconnected';
+      
+      this._rejectPendingRequests(error);
+      throw error;
+    }
   }
 
   /**

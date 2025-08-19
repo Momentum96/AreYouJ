@@ -1,6 +1,7 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { broadcastToClients } from '../websocket/index.js';
 import { getClaudeSession } from '../claude/session-manager.js';
 import sqliteManager from '../db/sqlite.js';
@@ -947,35 +948,73 @@ router.put('/settings/home-path', async (req, res) => {
       });
     }
 
-    // Security: Resolve path to prevent directory traversal attacks
+    // Security: Enhanced path validation
     const resolvedPath = path.resolve(projectHomePath);
+    const normalizedPath = path.normalize(resolvedPath);
     
-    // Security: Check for path traversal attempts
-    if (!resolvedPath.startsWith(path.resolve('/'))) {
+    // Security: Check for path traversal attempts and null bytes
+    if (projectHomePath.includes('\0') || projectHomePath.includes('..')) {
       return res.status(400).json({
-        error: 'Invalid path: path traversal detected'
+        error: 'Invalid path: suspicious characters detected'
+      });
+    }
+    
+    if (normalizedPath !== resolvedPath) {
+      return res.status(400).json({
+        error: 'Invalid path: normalization mismatch detected'
       });
     }
 
-    // Security: Prevent access to sensitive system directories
+    // Security: Whitelist allowed base directories (more secure approach)
+    const allowedBasePaths = [
+      os.homedir(), // User home directory
+      '/Users',     // macOS user directories
+      '/home',      // Linux user directories  
+      '/tmp',       // Temporary directory (for testing)
+      process.cwd() // Current working directory
+    ].map(basePath => path.resolve(basePath));
+
+    const isAllowedPath = allowedBasePaths.some(allowedBase => {
+      try {
+        return resolvedPath.startsWith(allowedBase);
+      } catch (e) {
+        return false;
+      }
+    });
+
+    if (!isAllowedPath) {
+      return res.status(403).json({
+        error: 'Path not in allowed directories. Only user directories and temp paths are allowed.',
+        allowedBasePaths: allowedBasePaths.map(p => p.replace(os.homedir(), '~'))
+      });
+    }
+
+    // Security: Additional forbidden system paths
     const forbiddenPaths = [
-      '/etc',
-      '/var/lib',
-      '/usr/bin',
-      '/bin',
-      '/sbin',
-      '/sys',
-      '/proc',
-      '/dev'
+      '/etc', '/var/lib', '/usr/bin', '/bin', '/sbin', '/sys', '/proc', '/dev',
+      '/boot', '/lib', '/lib64', '/opt', '/root', '/run', '/srv', '/var/cache',
+      '/var/log', '/var/spool', '/var/mail', '/usr/sbin', '/usr/include',
+      'C:\\Windows', 'C:\\Program Files', 'C:\\System32'  // Windows paths
     ];
     
-    const isForbiddenPath = forbiddenPaths.some(forbidden => 
-      resolvedPath.startsWith(path.resolve(forbidden))
-    );
+    const isForbiddenPath = forbiddenPaths.some(forbidden => {
+      try {
+        return resolvedPath.startsWith(path.resolve(forbidden));
+      } catch (e) {
+        return false;
+      }
+    });
     
     if (isForbiddenPath) {
       return res.status(403).json({
-        error: 'Access to system directories is not allowed'
+        error: 'Access to system directories is forbidden'
+      });
+    }
+
+    // Security: Check path length to prevent buffer overflow attacks
+    if (resolvedPath.length > 4096) {
+      return res.status(400).json({
+        error: 'Path too long (max 4096 characters)'
       });
     }
 
@@ -1017,21 +1056,14 @@ router.put('/settings/home-path', async (req, res) => {
     if (oldPath !== finalProjectHomePath) {
       claudeSession.setWorkingDirectory(finalProjectHomePath);
       
-      // Safely switch SQLite connection to new project home
+      // Atomically switch SQLite connection to new project home
       try {
-        await sqliteManager.closeDB();
-        await sqliteManager.initDB(finalProjectHomePath, true); // true indicates project switch
-        console.log('✅ Successfully switched SQLite database to new project path');
+        await sqliteManager.switchDatabase(finalProjectHomePath);
+        console.log('✅ Atomic database switch completed successfully');
       } catch (e) {
-        console.warn('Warning: failed to switch SQLite DB to new project home:', e.message);
-        // Do not fail the settings update; tasks endpoint will report DB issues as needed
-        // Try to reinitialize with previous path as fallback
-        try {
-          await sqliteManager.initDB(oldPath || finalProjectHomePath, true);
-          console.log('⚠️ Fallback: SQLite reconnected to previous/current path');
-        } catch (fallbackError) {
-          console.error('❌ Critical: Could not restore SQLite connection:', fallbackError.message);
-        }
+        console.warn('Warning: atomic database switch failed:', e.message);
+        // The atomic switch handles rollback internally, so connection should still be functional
+        // Do not fail the settings update; tasks endpoint will report any remaining DB issues
       }
     }
 
@@ -1076,13 +1108,37 @@ router.get('/tasks', async (req, res) => {
       await sqliteManager.initDB(projectHomePath);
     }
 
-    // Get all tasks from SQLite in JSON-compatible format
-    const tasksData = await sqliteManager.getAllTasks();
+    // Parse pagination parameters
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : undefined;
+    const offset = req.query.offset ? parseInt(req.query.offset, 10) : 0;
+    
+    // Validate pagination parameters
+    if (limit && (limit < 1 || limit > 1000)) {
+      return res.status(400).json({
+        error: 'limit must be between 1 and 1000'
+      });
+    }
+    
+    if (offset < 0) {
+      return res.status(400).json({
+        error: 'offset must be non-negative'
+      });
+    }
+
+    // Get tasks from SQLite with pagination
+    const tasksData = await sqliteManager.getAllTasks({ limit, offset });
+    const totalCount = await sqliteManager.getTaskCount();
     
     res.json({
       success: true,
       projectHomePath,
       dbPath,
+      pagination: {
+        limit: limit || null,
+        offset,
+        total: totalCount,
+        hasMore: limit ? (offset + limit < totalCount) : false
+      },
       ...tasksData
     });
   } catch (error) {

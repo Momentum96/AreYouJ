@@ -253,7 +253,7 @@ export class ApiClient {
   // Add message to queue
   async addMessage(message: string): Promise<ApiResponse> {
     if (!message.trim()) {
-      throw new Error('메시지 내용을 입력해주세요');
+      throw new Error('Message content is required');
     }
 
     return this.request('/queue/add', {
@@ -265,10 +265,10 @@ export class ApiClient {
   // Update message in queue
   async updateMessage(id: string, message: string): Promise<ApiResponse> {
     if (!id) {
-      throw new Error('수정할 메시지 ID가 필요합니다');
+      throw new Error('Message ID is required for update');
     }
     if (!message.trim()) {
-      throw new Error('메시지 내용을 입력해주세요');
+      throw new Error('Message content is required');
     }
 
     return this.request(`/queue/${id}`, {
@@ -280,7 +280,7 @@ export class ApiClient {
   // Delete message from queue
   async deleteMessage(id: string): Promise<ApiResponse> {
     if (!id) {
-      throw new Error('삭제할 메시지 ID가 필요합니다');
+      throw new Error('Message ID is required for deletion');
     }
 
     return this.request(`/queue/${id}`, {
@@ -319,7 +319,7 @@ export class ApiClient {
   // Send keypress to Claude terminal (ESC, Enter, etc.)
   async sendKeypress(key: string): Promise<ApiResponse> {
     if (!key || typeof key !== 'string') {
-      throw new Error('키 이름을 입력해주세요');
+      throw new Error('Key name is required and must be a string');
     }
 
     return this.request('/claude/keypress', {
@@ -381,7 +381,7 @@ export class ApiClient {
     remainingTasks: number;
   }> {
     if (!taskId || typeof taskId !== 'string') {
-      throw new Error('Task ID를 입력해주세요');
+      throw new Error('Task ID is required and must be a string');
     }
 
     return this.request(`/tasks/${encodeURIComponent(taskId)}`, {
@@ -396,10 +396,10 @@ export class ApiClient {
     remainingSubtasks: number;
   }> {
     if (!taskId || typeof taskId !== 'string') {
-      throw new Error('Task ID를 입력해주세요');
+      throw new Error('Task ID is required and must be a string');
     }
     if (!subtaskId || typeof subtaskId !== 'string') {
-      throw new Error('Subtask ID를 입력해주세요');
+      throw new Error('Subtask ID is required and must be a string');
     }
 
     return this.request(`/tasks/${encodeURIComponent(taskId)}/subtasks/${encodeURIComponent(subtaskId)}`, {

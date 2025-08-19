@@ -1,8 +1,10 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { broadcastToClients } from '../websocket/index.js';
 import { getClaudeSession } from '../claude/session-manager.js';
+import sqliteManager from '../db/sqlite.js';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 const SETTINGS_FILE = path.join(__dirname, '../data/settings.json');
@@ -936,7 +938,7 @@ router.get('/settings', (req, res) => {
 });
 
 // Update project home path
-router.put('/settings/home-path', (req, res) => {
+router.put('/settings/home-path', async (req, res) => {
   try {
     const { projectHomePath } = req.body;
     
@@ -946,28 +948,101 @@ router.put('/settings/home-path', (req, res) => {
       });
     }
 
+    // Security: Enhanced path validation
+    const resolvedPath = path.resolve(projectHomePath);
+    const normalizedPath = path.normalize(resolvedPath);
+    
+    // Security: Check for path traversal attempts and null bytes
+    if (projectHomePath.includes('\0') || projectHomePath.includes('..')) {
+      return res.status(400).json({
+        error: 'Invalid path: suspicious characters detected'
+      });
+    }
+    
+    if (normalizedPath !== resolvedPath) {
+      return res.status(400).json({
+        error: 'Invalid path: normalization mismatch detected'
+      });
+    }
+
+    // Security: Whitelist allowed base directories (more secure approach)
+    const allowedBasePaths = [
+      os.homedir(), // User home directory
+      '/Users',     // macOS user directories
+      '/home',      // Linux user directories  
+      '/tmp',       // Temporary directory (for testing)
+      process.cwd() // Current working directory
+    ].map(basePath => path.resolve(basePath));
+
+    const isAllowedPath = allowedBasePaths.some(allowedBase => {
+      try {
+        return resolvedPath.startsWith(allowedBase);
+      } catch (e) {
+        return false;
+      }
+    });
+
+    if (!isAllowedPath) {
+      return res.status(403).json({
+        error: 'Path not in allowed directories. Only user directories and temp paths are allowed.',
+        allowedBasePaths: allowedBasePaths.map(p => p.replace(os.homedir(), '~'))
+      });
+    }
+
+    // Security: Additional forbidden system paths
+    const forbiddenPaths = [
+      '/etc', '/var/lib', '/usr/bin', '/bin', '/sbin', '/sys', '/proc', '/dev',
+      '/boot', '/lib', '/lib64', '/opt', '/root', '/run', '/srv', '/var/cache',
+      '/var/log', '/var/spool', '/var/mail', '/usr/sbin', '/usr/include',
+      'C:\\Windows', 'C:\\Program Files', 'C:\\System32'  // Windows paths
+    ];
+    
+    const isForbiddenPath = forbiddenPaths.some(forbidden => {
+      try {
+        return resolvedPath.startsWith(path.resolve(forbidden));
+      } catch (e) {
+        return false;
+      }
+    });
+    
+    if (isForbiddenPath) {
+      return res.status(403).json({
+        error: 'Access to system directories is forbidden'
+      });
+    }
+
+    // Security: Check path length to prevent buffer overflow attacks
+    if (resolvedPath.length > 4096) {
+      return res.status(400).json({
+        error: 'Path too long (max 4096 characters)'
+      });
+    }
+
     // Validate path exists
-    if (!fs.existsSync(projectHomePath)) {
+    if (!fs.existsSync(resolvedPath)) {
       return res.status(400).json({
         error: 'The specified path does not exist'
       });
     }
 
     // Check if path is a directory
-    const stats = fs.statSync(projectHomePath);
+    const stats = fs.statSync(resolvedPath);
     if (!stats.isDirectory()) {
       return res.status(400).json({
         error: 'The specified path is not a directory'
       });
     }
 
+    // Use resolved path for the rest of the operations
+    const finalProjectHomePath = resolvedPath;
+
     const settings = loadSettings();
     const oldPath = settings.projectHomePath;
-    settings.projectHomePath = projectHomePath;
+    settings.projectHomePath = finalProjectHomePath;
     
     // 새로운 경로가 다르면 최근 경로에 추가
-    if (oldPath !== projectHomePath) {
-      addToRecentPaths(settings, projectHomePath);
+    if (oldPath !== finalProjectHomePath) {
+      addToRecentPaths(settings, finalProjectHomePath);
     }
     
     const saved = saveSettings(settings);
@@ -978,8 +1053,18 @@ router.put('/settings/home-path', (req, res) => {
     }
 
     // Update Claude session manager's working directory if changed
-    if (oldPath !== projectHomePath) {
-      claudeSession.setWorkingDirectory(projectHomePath);
+    if (oldPath !== finalProjectHomePath) {
+      claudeSession.setWorkingDirectory(finalProjectHomePath);
+      
+      // Atomically switch SQLite connection to new project home
+      try {
+        await sqliteManager.switchDatabase(finalProjectHomePath);
+        console.log('✅ Atomic database switch completed successfully');
+      } catch (e) {
+        console.warn('Warning: atomic database switch failed:', e.message);
+        // The atomic switch handles rollback internally, so connection should still be functional
+        // Do not fail the settings update; tasks endpoint will report any remaining DB issues
+      }
     }
 
     // Broadcast settings update
@@ -1002,31 +1087,70 @@ router.put('/settings/home-path', (req, res) => {
 });
 
 // Tasks management endpoint
-// Get tasks.json from project home path
-router.get('/tasks', (req, res) => {
+// Get tasks from SQLite database
+router.get('/tasks', async (req, res) => {
   try {
     const settings = loadSettings();
     const projectHomePath = settings.projectHomePath;
-    const tasksFilePath = path.join(projectHomePath, 'docs', 'tasks.json');
+    const dbPath = path.join(projectHomePath, 'docs', 'tasks.db');
     
-    // Check if tasks.json exists
-    if (!fs.existsSync(tasksFilePath)) {
+    // Check if docs directory exists first
+    const docsDir = path.join(projectHomePath, 'docs');
+    if (!fs.existsSync(docsDir)) {
       return res.status(404).json({
-        error: 'tasks.json not found in project docs directory',
-        path: tasksFilePath,
+        error: 'Project docs directory not found. Please create it or initialize tasks first.',
+        expectedPath: docsDir,
         projectHomePath
       });
     }
 
-    // Read and parse tasks.json
-    const tasksData = fs.readFileSync(tasksFilePath, 'utf-8');
-    const parsedTasks = JSON.parse(tasksData);
+    // Check if SQLite database exists
+    if (!fs.existsSync(dbPath)) {
+      return res.status(404).json({
+        error: 'No tasks database found. The project does not appear to have any tasks yet.',
+        expectedPath: dbPath,
+        projectHomePath,
+        suggestion: 'Add some tasks to create the database automatically'
+      });
+    }
+
+    // Initialize SQLite manager if needed
+    if (!sqliteManager.getDB()) {
+      await sqliteManager.initDB(projectHomePath);
+    }
+
+    // Parse pagination parameters
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : undefined;
+    const offset = req.query.offset ? parseInt(req.query.offset, 10) : 0;
+    
+    // Validate pagination parameters
+    if (limit && (limit < 1 || limit > 1000)) {
+      return res.status(400).json({
+        error: 'limit must be between 1 and 1000'
+      });
+    }
+    
+    if (offset < 0) {
+      return res.status(400).json({
+        error: 'offset must be non-negative'
+      });
+    }
+
+    // Get tasks from SQLite with pagination
+    const tasksData = await sqliteManager.getAllTasks({ limit, offset });
+    const totalCount = await sqliteManager.getTaskCount();
     
     res.json({
       success: true,
       projectHomePath,
-      tasksFilePath,
-      ...parsedTasks
+      dbPath,
+      pagination: {
+        limit: limit || null,
+        offset,
+        total: totalCount,
+        hasMore: limit ? (offset + limit < totalCount) : false
+      },
+      ...tasksData
     });
   } catch (error) {
     console.error('❌ Failed to load tasks:', error);
@@ -1038,54 +1162,49 @@ router.get('/tasks', (req, res) => {
 });
 
 // Delete task by ID
-router.delete('/tasks/:id', (req, res) => {
+router.delete('/tasks/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const settings = loadSettings();
     const projectHomePath = settings.projectHomePath;
-    const tasksFilePath = path.join(projectHomePath, 'docs', 'tasks.json');
+    const dbPath = path.join(projectHomePath, 'docs', 'tasks.db');
     
-    // Check if tasks.json exists
-    if (!fs.existsSync(tasksFilePath)) {
+    // Check if SQLite database exists
+    if (!fs.existsSync(dbPath)) {
       return res.status(404).json({
-        error: 'tasks.json not found in project docs directory',
-        path: tasksFilePath,
+        error: 'tasks.db not found in project docs directory',
+        path: dbPath,
         projectHomePath
       });
     }
 
-    // Read and parse tasks.json
-    const tasksData = fs.readFileSync(tasksFilePath, 'utf-8');
-    const parsedTasks = JSON.parse(tasksData);
-    
-    // Find task index
-    const taskIndex = parsedTasks.tasks.findIndex(task => task.id === id);
-    
-    if (taskIndex === -1) {
-      return res.status(404).json({
-        error: `Task with ID '${id}' not found`,
-        availableIds: parsedTasks.tasks.map(task => task.id)
-      });
+    // Initialize SQLite manager if needed
+    if (!sqliteManager.getDB()) {
+      await sqliteManager.initDB(projectHomePath);
     }
+
+    // Delete task from SQLite database
+    const result = await sqliteManager.deleteTask(id);
     
-    // Remove task from array
-    const deletedTask = parsedTasks.tasks.splice(taskIndex, 1)[0];
-    
-    // Write updated tasks back to file
-    fs.writeFileSync(tasksFilePath, JSON.stringify(parsedTasks, null, 2), 'utf-8');
-    
-    console.log(`✅ Successfully deleted task: ${deletedTask.title} (ID: ${id})`);
+    // Get remaining task count efficiently
+    const remainingTasks = await sqliteManager.getTaskCount();
     
     res.json({
       success: true,
-      deletedTask: {
-        id: deletedTask.id,
-        title: deletedTask.title
-      },
-      remainingTasks: parsedTasks.tasks.length
+      deletedTask: result.deletedTask,
+      remainingTasks: remainingTasks
     });
   } catch (error) {
     console.error('❌ Failed to delete task:', error);
+    
+    // Handle specific error cases
+    if (error.message.includes('not found')) {
+      return res.status(404).json({
+        error: error.message,
+        projectHomePath: loadSettings().projectHomePath
+      });
+    }
+    
     res.status(500).json({
       error: `Failed to delete task: ${error.message}`,
       projectHomePath: loadSettings().projectHomePath
@@ -1094,70 +1213,49 @@ router.delete('/tasks/:id', (req, res) => {
 });
 
 // Delete subtask by task ID and subtask ID
-router.delete('/tasks/:taskId/subtasks/:subtaskId', (req, res) => {
+router.delete('/tasks/:taskId/subtasks/:subtaskId', async (req, res) => {
   try {
     const { taskId, subtaskId } = req.params;
     const settings = loadSettings();
     const projectHomePath = settings.projectHomePath;
-    const tasksFilePath = path.join(projectHomePath, 'docs', 'tasks.json');
+    const dbPath = path.join(projectHomePath, 'docs', 'tasks.db');
     
-    // Check if tasks.json exists
-    if (!fs.existsSync(tasksFilePath)) {
+    // Check if SQLite database exists
+    if (!fs.existsSync(dbPath)) {
       return res.status(404).json({
-        error: 'tasks.json not found in project docs directory',
-        path: tasksFilePath,
+        error: 'tasks.db not found in project docs directory',
+        path: dbPath,
         projectHomePath
       });
     }
 
-    // Read and parse tasks.json
-    const tasksData = fs.readFileSync(tasksFilePath, 'utf-8');
-    const parsedTasks = JSON.parse(tasksData);
-    
-    // Find parent task
-    const task = parsedTasks.tasks.find(task => task.id === taskId);
-    if (!task) {
-      return res.status(404).json({
-        error: `Task with ID '${taskId}' not found`,
-        availableIds: parsedTasks.tasks.map(task => task.id)
-      });
+    // Initialize SQLite manager if needed
+    if (!sqliteManager.getDB()) {
+      await sqliteManager.initDB(projectHomePath);
     }
+
+    // Delete subtask from SQLite database
+    const result = await sqliteManager.deleteSubtask(taskId, subtaskId);
     
-    // Check if task has subtasks
-    if (!task.subtasks || !Array.isArray(task.subtasks)) {
-      return res.status(404).json({
-        error: `Task '${taskId}' has no subtasks`
-      });
-    }
-    
-    // Find subtask index
-    const subtaskIndex = task.subtasks.findIndex(subtask => subtask.id === subtaskId);
-    if (subtaskIndex === -1) {
-      return res.status(404).json({
-        error: `Subtask with ID '${subtaskId}' not found in task '${taskId}'`,
-        availableSubtaskIds: task.subtasks.map(subtask => subtask.id)
-      });
-    }
-    
-    // Remove subtask from array
-    const deletedSubtask = task.subtasks.splice(subtaskIndex, 1)[0];
-    
-    // Write updated tasks back to file
-    fs.writeFileSync(tasksFilePath, JSON.stringify(parsedTasks, null, 2), 'utf-8');
-    
-    console.log(`✅ Successfully deleted subtask: ${deletedSubtask.title} (ID: ${subtaskId}) from task ${taskId}`);
+    // Get remaining subtask count efficiently
+    const remainingSubtasks = await sqliteManager.getSubtaskCount(taskId);
     
     res.json({
       success: true,
-      deletedSubtask: {
-        id: deletedSubtask.id,
-        title: deletedSubtask.title,
-        parentTaskId: taskId
-      },
-      remainingSubtasks: task.subtasks.length
+      deletedSubtask: result.deletedSubtask,
+      remainingSubtasks: remainingSubtasks
     });
   } catch (error) {
     console.error('❌ Failed to delete subtask:', error);
+    
+    // Handle specific error cases
+    if (error.message.includes('not found')) {
+      return res.status(404).json({
+        error: error.message,
+        projectHomePath: loadSettings().projectHomePath
+      });
+    }
+    
     res.status(500).json({
       error: `Failed to delete subtask: ${error.message}`,
       projectHomePath: loadSettings().projectHomePath

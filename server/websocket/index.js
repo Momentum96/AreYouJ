@@ -263,12 +263,43 @@ function handleWebSocketMessage(ws, message) {
   }
 }
 
-// Broadcast message to all connected clients
+// Debouncing mechanism for broadcasts
+const broadcastQueue = new Map(); // message type -> {message, timeoutId}
+const DEBOUNCE_DELAY = 300; // 300ms debounce
+
+// Broadcast message to all connected clients with debouncing
 export function broadcastToClients(message) {
   if (connectedClients.size === 0) {
     return; // No clients to broadcast to
   }
+
+  // For certain message types, apply debouncing
+  const debouncedTypes = ['task-update', 'tasks-reloaded', 'subtask-update', 'task-deleted', 'subtask-deleted'];
   
+  if (debouncedTypes.includes(message.type)) {
+    const existingBroadcast = broadcastQueue.get(message.type);
+    
+    // Clear existing timeout if any
+    if (existingBroadcast) {
+      clearTimeout(existingBroadcast.timeoutId);
+    }
+    
+    // Set new timeout
+    const timeoutId = setTimeout(() => {
+      _doBroadcast(message);
+      broadcastQueue.delete(message.type);
+    }, DEBOUNCE_DELAY);
+    
+    broadcastQueue.set(message.type, { message, timeoutId });
+    return;
+  }
+  
+  // For non-debounced messages, broadcast immediately
+  _doBroadcast(message);
+}
+
+// Internal function to perform actual broadcast
+function _doBroadcast(message) {
   const messageString = JSON.stringify({
     ...message,
     timestamp: new Date().toISOString()

@@ -44,12 +44,12 @@ function App() {
       
       if (!response.ok) {
         if (response.status === 404) {
-          // tasks.json이 없는 경우 - UI는 표시하되 에러 메시지만 설정
+          // tasks.db가 없는 경우 - UI는 표시하되 에러 메시지만 설정
           const errorData = await response.json();
-          console.log('tasks.json not found, showing empty state');
+          console.log('tasks.db not found, showing empty state');
           setTasks([]);
           setProjectPath(errorData.projectHomePath || '');
-          setError('프로젝트에 tasks.json이 없습니다.');
+          setError('프로젝트에 tasks.db가 없습니다.');
           return;
         } else {
           throw new Error(
@@ -58,10 +58,11 @@ function App() {
         }
       }
       const data = await response.json();
-
+      
       setTasks(data.tasks || []);
       setProjectPath(data.projectHomePath || '');
       if (error) setError(null); // 성공 시 이전 에러 초기화
+    
     } catch (err) {
       // AbortError는 무시 (정상적인 요청 취소)
       if (err instanceof Error && err.name === 'AbortError') {
@@ -99,14 +100,11 @@ function App() {
 
   // Global WebSocket connection management
   useEffect(() => {
-    console.log('🌍 Initializing global WebSocket connection...');
-    
     const handleSettingsUpdate = (message: any) => {
       // 프로젝트 경로 변경 시 tasks 새로고침
       if (message.type === 'settings-update') {
         const newProjectPath = message.data.settings.projectHomePath;
-        if (newProjectPath !== projectPath) {
-          console.log('Project path changed, refreshing tasks...');
+        if (newProjectPath && newProjectPath !== projectPath) {
           // 로딩 상태를 보여주면서 tasks를 새로고침
           setTimeout(() => {
             fetchTasks(true);
@@ -116,7 +114,6 @@ function App() {
     };
 
     const handleWorkingDirectoryChanged = (message: any) => {
-      console.log('Working directory changed, refreshing tasks...', message.data);
       setTimeout(() => {
         fetchTasks(true);
       }, 100);
@@ -127,7 +124,10 @@ function App() {
       try {
         if (!wsClient.isConnected()) {
           await wsClient.connect();
-          console.log('✅ Global WebSocket connected');
+          // WebSocket 재연결 시 tasks 새로고침 (프로젝트 경로 변경 후 연결 끊김 대응)
+          setTimeout(() => {
+            fetchTasks(true);
+          }, 200);
         }
       } catch (error) {
         console.error('❌ Global WebSocket connection failed:', error);
@@ -143,14 +143,13 @@ function App() {
 
     // Cleanup on unmount (this will only happen when the entire app unmounts)
     return () => {
-      console.log('🧹 App component cleanup - removing WebSocket handlers');
       wsClient.off('settings-update', handleSettingsUpdate);
       wsClient.off('working-directory-changed', handleWorkingDirectoryChanged);
       
       // Note: We don't disconnect the WebSocket here because it should persist
       // throughout the entire app lifecycle. It will be cleaned up when the browser closes.
     };
-  }, [projectPath, fetchTasks]);
+  }, []); // Empty dependency - only run once on mount
 
   useEffect(() => {
     // 프로젝트 이름을 대시보드 제목으로 변환
@@ -167,8 +166,8 @@ function App() {
   }, []);
 
 
-  // 심각한 에러(서버 연결 실패 등)만 전체 화면으로 표시, tasks.json 없는 것은 UI 내에서 처리
-  const isCriticalError = error && !error.includes('tasks.json') && tasks.length === 0;
+  // 심각한 에러(서버 연결 실패 등)만 전체 화면으로 표시, tasks.db 없는 것은 UI 내에서 처리
+  const isCriticalError = error && !error.includes('tasks.db') && tasks.length === 0;
   
   if (isCriticalError) {
     return (
@@ -246,6 +245,7 @@ function App() {
               isLoadingTasks={isLoadingTasks} 
               onTaskDeleted={() => fetchTasks()} 
               error={error}
+              key={`${projectPath}-${tasks.length}`} // Force re-render when data changes
             />
           </ErrorBoundary>
         ) : (

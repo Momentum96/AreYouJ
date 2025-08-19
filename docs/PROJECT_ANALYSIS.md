@@ -56,7 +56,7 @@ areyouj/
 │   ├── main.cjs           # 메인 프로세스 로직
 │   └── preload.cjs        # 프리로드 스크립트
 ├── public/                 # 정적 자산
-│   └── tasks.json         # 작업 데이터 (개발용)
+│   └── tasks.db          # 작업 데이터 (SQLite 데이터베이스)
 └── prompt/                # 프로젝트 가이드라인
     ├── memory-management.md
     ├── prd.md
@@ -94,7 +94,7 @@ interface Task {
 - **창 관리** - 최소화, 최대화, 트레이 숨김/표시
 - **시스템 트레이** - 백그라운드 실행 지원
 - **IPC 핸들러** - 보안이 강화된 프로세스 간 통신
-- **파일 시스템** - tasks.json 읽기 기능
+- **파일 시스템** - tasks.db 읽기 기능
 
 ## 🎨 사용자 경험 (UX)
 
@@ -110,7 +110,7 @@ interface Task {
 
 ## 🔄 데이터 플로우
 
-1. **초기 로딩** - App.tsx에서 tasks.json 또는 IPC를 통해 데이터 fetch
+1. **초기 로딩** - App.tsx에서 tasks.db 또는 IPC를 통해 데이터 fetch
 2. **상태 관리** - React useState를 통한 로컬 상태 관리
 3. **필터링** - useTaskFilter 훅에서 실시간 필터링 로직 처리
 4. **통계 계산** - useTaskStats 훅에서 파생 상태 계산

@@ -1094,12 +1094,23 @@ router.get('/tasks', async (req, res) => {
     const projectHomePath = settings.projectHomePath;
     const dbPath = path.join(projectHomePath, 'docs', 'tasks.db');
     
+    // Check if docs directory exists first
+    const docsDir = path.join(projectHomePath, 'docs');
+    if (!fs.existsSync(docsDir)) {
+      return res.status(404).json({
+        error: 'Project docs directory not found. Please create it or initialize tasks first.',
+        expectedPath: docsDir,
+        projectHomePath
+      });
+    }
+
     // Check if SQLite database exists
     if (!fs.existsSync(dbPath)) {
       return res.status(404).json({
-        error: 'tasks.db not found in project docs directory',
-        path: dbPath,
-        projectHomePath
+        error: 'No tasks database found. The project does not appear to have any tasks yet.',
+        expectedPath: dbPath,
+        projectHomePath,
+        suggestion: 'Add some tasks to create the database automatically'
       });
     }
 

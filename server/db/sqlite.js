@@ -62,10 +62,10 @@ class SQLiteManager {
     try {
       this.dbPath = path.join(projectHomePath, 'docs', 'tasks.db');
       
-      // Ensure docs directory exists
+      // Check if docs directory exists
       const docsDir = path.dirname(this.dbPath);
       if (!fs.existsSync(docsDir)) {
-        fs.mkdirSync(docsDir, { recursive: true });
+        throw new Error(`Project docs directory does not exist: ${docsDir}. Please create it manually or initialize with tasks first.`);
       }
 
       // Check if database file exists
@@ -626,10 +626,10 @@ class SQLiteManager {
     const oldDbPath = this.dbPath;
     
     try {
-      // Ensure target docs directory exists
+      // Check if target docs directory exists
       const docsDir = path.dirname(newDbPath);
       if (!fs.existsSync(docsDir)) {
-        fs.mkdirSync(docsDir, { recursive: true });
+        throw new Error(`Target project docs directory does not exist: ${docsDir}. Please create it manually or initialize with tasks first.`);
       }
 
       const dbExists = fs.existsSync(newDbPath);

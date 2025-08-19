@@ -937,7 +937,7 @@ router.get('/settings', (req, res) => {
 });
 
 // Update project home path
-router.put('/settings/home-path', (req, res) => {
+router.put('/settings/home-path', async (req, res) => {
   try {
     const { projectHomePath } = req.body;
     
@@ -981,6 +981,18 @@ router.put('/settings/home-path', (req, res) => {
     // Update Claude session manager's working directory if changed
     if (oldPath !== projectHomePath) {
       claudeSession.setWorkingDirectory(projectHomePath);
+      // Also reset SQLite connection to point to the new project home
+      try {
+        await sqliteManager.closeDB();
+      } catch (e) {
+        console.warn('Warning: failed to close previous SQLite DB connection:', e.message);
+      }
+      try {
+        await sqliteManager.initDB(projectHomePath);
+      } catch (e) {
+        console.warn('Warning: failed to initialize SQLite DB for new project home:', e.message);
+        // Do not fail the settings update; tasks endpoint will report DB issues as needed
+      }
     }
 
     // Broadcast settings update

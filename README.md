@@ -75,7 +75,7 @@ This is a **full-stack web application** with Claude CLI integration:
 
 ### 📊 Task Management Dashboard
 
-- **Real-time Task Tracking**: Auto-sync with `docs/tasks.json` changes
+- **Real-time Task Tracking**: Auto-sync with `docs/tasks.db` changes
 - **Advanced Filtering**: Filter by status, priority, assignee, and search terms
 - **Progress Visualization**: Animated counters and circular progress indicators
 - **Task Details Modal**: Rich task information with subtask management
@@ -96,7 +96,7 @@ This is a **full-stack web application** with Claude CLI integration:
 ```
 You: "Help me create a development plan for a React dashboard project"
 Claude: [Generates structured project breakdown]
-Result: Automatically updates tasks.json with actionable items
+Result: Automatically updates tasks.db with actionable items
 ```
 
 ### Real-time Development Assistance
@@ -168,7 +168,7 @@ AreYouJ/
 │
 ├── 📄 Configuration & Data
 │   ├── docs/
-│   │   ├── tasks.json              # Task data (AI-generated)
+│   │   ├── tasks.db               # Task data (SQLite database)
 │   │   └── PROJECT_ANALYSIS.md     # Project documentation
 │   ├── prompt/                     # AI prompts for manual copy
 │   └── package.json                # Dependencies and scripts
@@ -273,7 +273,7 @@ claude --version
 
 **Tasks not updating**
 
-- Check `docs/tasks.json` file permissions
+- Check `docs/tasks.db` file permissions
 - Verify the file follows correct JSON format
 - Look at browser console for client-side errors
 

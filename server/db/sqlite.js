@@ -185,6 +185,54 @@ class SQLiteManager {
   }
 
   /**
+   * Execute operations within a database transaction
+   * @param {Function} operations - Async function containing operations to execute
+   * @returns {Promise<any>} - Result from operations
+   * @private
+   */
+  async _executeInTransaction(operations) {
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      this.db.serialize(() => {
+        this.db.run('BEGIN TRANSACTION', (err) => {
+          if (err) {
+            reject(new Error(`Failed to begin transaction: ${err.message}`));
+            return;
+          }
+
+          // Execute the operations
+          operations()
+            .then((result) => {
+              // Operations succeeded, commit transaction
+              this.db.run('COMMIT', (err) => {
+                if (err) {
+                  reject(new Error(`Failed to commit transaction: ${err.message}`));
+                } else {
+                  resolve(result);
+                }
+              });
+            })
+            .catch((error) => {
+              // Operations failed, rollback transaction
+              this.db.run('ROLLBACK', (rollbackErr) => {
+                if (rollbackErr) {
+                  console.error('Failed to rollback transaction:', rollbackErr);
+                  reject(new Error(`Transaction failed and rollback failed: ${error.message}`));
+                } else {
+                  reject(new Error(`Transaction rolled back: ${error.message}`));
+                }
+              });
+            });
+        });
+      });
+    });
+  }
+
+  /**
    * Get all tasks with their subtasks (JSON compatible format)
    * @returns {Promise<Object>} - Tasks in JSON format
    */
@@ -267,138 +315,56 @@ class SQLiteManager {
       throw new Error('Task ID must be a non-empty string');
     }
 
-    return new Promise(async (resolve, reject) => {
-      if (!this.db) {
-        reject(new Error('Database not initialized'));
-        return;
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    try {
+      // First check if task exists
+      const task = await this.executeQuery(
+        'SELECT id, title, parent_id FROM tasks WHERE id = ?', 
+        [taskId]
+      );
+
+      if (task.length === 0) {
+        throw new Error(`Task with ID '${taskId}' not found`);
       }
 
-      try {
-        // First check if task exists
-        const task = await this.executeQuery(
-          'SELECT id, title, parent_id FROM tasks WHERE id = ?', 
-          [taskId]
+      const taskInfo = task[0];
+
+      // Execute transaction using Promise-based approach
+      return await this._executeInTransaction(async () => {
+        // Delete task dependencies
+        await this.executeStatement(
+          'DELETE FROM task_dependencies WHERE task_id = ? OR dependency_id = ?',
+          [taskId, taskId]
         );
 
-        if (task.length === 0) {
-          reject(new Error(`Task with ID '${taskId}' not found`));
-          return;
+        // If parent task, delete subtask dependencies and subtasks
+        if (!taskInfo.parent_id) {
+          await this.executeStatement(
+            'DELETE FROM task_dependencies WHERE task_id IN (SELECT id FROM tasks WHERE parent_id = ?)',
+            [taskId]
+          );
+          await this.executeStatement('DELETE FROM tasks WHERE parent_id = ?', [taskId]);
         }
 
-        const taskInfo = task[0];
-
-        // Use transaction for atomic deletion
-        this.db.serialize(() => {
-          this.db.run('BEGIN TRANSACTION', (err) => {
-            if (err) {
-              reject(new Error(`Failed to begin transaction: ${err.message}`));
-              return;
-            }
-
-            // Delete task dependencies
-            this.db.run(
-              'DELETE FROM task_dependencies WHERE task_id = ? OR dependency_id = ?',
-              [taskId, taskId],
-              (err) => {
-                if (err) {
-                  this.db.run('ROLLBACK');
-                  reject(new Error(`Failed to delete dependencies: ${err.message}`));
-                  return;
-                }
-
-                // If parent task, delete subtask dependencies and subtasks
-                if (!taskInfo.parent_id) {
-                  this.db.run(
-                    'DELETE FROM task_dependencies WHERE task_id IN (SELECT id FROM tasks WHERE parent_id = ?)',
-                    [taskId],
-                    (err) => {
-                      if (err) {
-                        this.db.run('ROLLBACK');
-                        reject(new Error(`Failed to delete subtask dependencies: ${err.message}`));
-                        return;
-                      }
-
-                      this.db.run(
-                        'DELETE FROM tasks WHERE parent_id = ?',
-                        [taskId],
-                        (err) => {
-                          if (err) {
-                            this.db.run('ROLLBACK');
-                            reject(new Error(`Failed to delete subtasks: ${err.message}`));
-                            return;
-                          }
-
-                          // Finally delete the task itself
-                          this.db.run(
-                            'DELETE FROM tasks WHERE id = ?',
-                            [taskId],
-                            function(err) {
-                              if (err) {
-                                this.db.run('ROLLBACK');
-                                reject(new Error(`Failed to delete task: ${err.message}`));
-                                return;
-                              }
-
-                              // Commit transaction
-                              this.db.run('COMMIT', (err) => {
-                                if (err) {
-                                  reject(new Error(`Failed to commit transaction: ${err.message}`));
-                                } else {
-                                  console.log(`✅ Successfully deleted task: ${taskInfo.title} (ID: ${taskId})`);
-                                  resolve({
-                                    deletedTask: {
-                                      id: taskInfo.id,
-                                      title: taskInfo.title
-                                    },
-                                    affectedRows: this.changes
-                                  });
-                                }
-                              });
-                            }
-                          );
-                        }
-                      );
-                    }
-                  );
-                } else {
-                  // For subtasks, just delete the task itself
-                  this.db.run(
-                    'DELETE FROM tasks WHERE id = ?',
-                    [taskId],
-                    function(err) {
-                      if (err) {
-                        this.db.run('ROLLBACK');
-                        reject(new Error(`Failed to delete task: ${err.message}`));
-                        return;
-                      }
-
-                      // Commit transaction
-                      this.db.run('COMMIT', (err) => {
-                        if (err) {
-                          reject(new Error(`Failed to commit transaction: ${err.message}`));
-                        } else {
-                          console.log(`✅ Successfully deleted task: ${taskInfo.title} (ID: ${taskId})`);
-                          resolve({
-                            deletedTask: {
-                              id: taskInfo.id,
-                              title: taskInfo.title
-                            },
-                            affectedRows: this.changes
-                          });
-                        }
-                      });
-                    }
-                  );
-                }
-              }
-            );
-          });
-        });
-      } catch (error) {
-        console.error('❌ Failed to delete task:', error);
-        reject(error);
-      }
-    });
+        // Finally delete the task itself
+        const result = await this.executeStatement('DELETE FROM tasks WHERE id = ?', [taskId]);
+        
+        console.log(`✅ Successfully deleted task: ${taskInfo.title} (ID: ${taskId})`);
+        return {
+          deletedTask: {
+            id: taskInfo.id,
+            title: taskInfo.title
+          },
+          affectedRows: result.changes
+        };
+      });
+    } catch (error) {
+      console.error('❌ Failed to delete task:', error);
+      throw error;
+    }
   }
 
   /**
@@ -417,94 +383,96 @@ class SQLiteManager {
       throw new Error('Task IDs must be strings');
     }
 
-    return new Promise(async (resolve, reject) => {
-      if (!this.db) {
-        reject(new Error('Database not initialized'));
-        return;
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    try {
+      // Check if parent task exists
+      const parentTask = await this.executeQuery(
+        'SELECT id FROM tasks WHERE id = ? AND parent_id IS NULL',
+        [parentTaskId]
+      );
+
+      if (parentTask.length === 0) {
+        throw new Error(`Parent task with ID '${parentTaskId}' not found`);
       }
 
-      try {
-        // Check if parent task exists
-        const parentTask = await this.executeQuery(
-          'SELECT id FROM tasks WHERE id = ? AND parent_id IS NULL',
-          [parentTaskId]
-        );
+      // Check if subtask exists and belongs to parent
+      const subtask = await this.executeQuery(
+        'SELECT id, title FROM tasks WHERE id = ? AND parent_id = ?',
+        [subtaskId, parentTaskId]
+      );
 
-        if (parentTask.length === 0) {
-          reject(new Error(`Parent task with ID '${parentTaskId}' not found`));
-          return;
-        }
-
-        // Check if subtask exists and belongs to parent
-        const subtask = await this.executeQuery(
-          'SELECT id, title FROM tasks WHERE id = ? AND parent_id = ?',
-          [subtaskId, parentTaskId]
-        );
-
-        if (subtask.length === 0) {
-          reject(new Error(`Subtask with ID '${subtaskId}' not found in task '${parentTaskId}'`));
-          return;
-        }
-
-        const subtaskInfo = subtask[0];
-
-        // Use transaction for atomic deletion
-        this.db.serialize(() => {
-          this.db.run('BEGIN TRANSACTION', (err) => {
-            if (err) {
-              reject(new Error(`Failed to begin transaction: ${err.message}`));
-              return;
-            }
-
-            // Delete subtask dependencies first
-            this.db.run(
-              'DELETE FROM task_dependencies WHERE task_id = ? OR dependency_id = ?',
-              [subtaskId, subtaskId],
-              (err) => {
-                if (err) {
-                  this.db.run('ROLLBACK');
-                  reject(new Error(`Failed to delete subtask dependencies: ${err.message}`));
-                  return;
-                }
-
-                // Delete the subtask itself
-                this.db.run(
-                  'DELETE FROM tasks WHERE id = ?',
-                  [subtaskId],
-                  function(err) {
-                    if (err) {
-                      this.db.run('ROLLBACK');
-                      reject(new Error(`Failed to delete subtask: ${err.message}`));
-                      return;
-                    }
-
-                    // Commit transaction
-                    this.db.run('COMMIT', (err) => {
-                      if (err) {
-                        reject(new Error(`Failed to commit transaction: ${err.message}`));
-                      } else {
-                        console.log(`✅ Successfully deleted subtask: ${subtaskInfo.title} (ID: ${subtaskId}) from task ${parentTaskId}`);
-                        resolve({
-                          deletedSubtask: {
-                            id: subtaskInfo.id,
-                            title: subtaskInfo.title,
-                            parentTaskId: parentTaskId
-                          },
-                          affectedRows: this.changes
-                        });
-                      }
-                    });
-                  }
-                );
-              }
-            );
-          });
-        });
-      } catch (error) {
-        console.error('❌ Failed to delete subtask:', error);
-        reject(error);
+      if (subtask.length === 0) {
+        throw new Error(`Subtask with ID '${subtaskId}' not found in task '${parentTaskId}'`);
       }
-    });
+
+      const subtaskInfo = subtask[0];
+
+      // Execute transaction using Promise-based approach
+      return await this._executeInTransaction(async () => {
+        // Delete subtask dependencies first
+        await this.executeStatement(
+          'DELETE FROM task_dependencies WHERE task_id = ? OR dependency_id = ?',
+          [subtaskId, subtaskId]
+        );
+
+        // Delete the subtask itself
+        const result = await this.executeStatement('DELETE FROM tasks WHERE id = ?', [subtaskId]);
+        
+        console.log(`✅ Successfully deleted subtask: ${subtaskInfo.title} (ID: ${subtaskId}) from task ${parentTaskId}`);
+        return {
+          deletedSubtask: {
+            id: subtaskInfo.id,
+            title: subtaskInfo.title,
+            parentTaskId: parentTaskId
+          },
+          affectedRows: result.changes
+        };
+      });
+    } catch (error) {
+      console.error('❌ Failed to delete subtask:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get count of parent tasks (tasks without parent_id)
+   * @returns {Promise<number>} - Count of parent tasks
+   */
+  async getTaskCount() {
+    try {
+      const result = await this.executeQuery(
+        'SELECT COUNT(*) as count FROM tasks WHERE parent_id IS NULL'
+      );
+      return result[0].count;
+    } catch (error) {
+      console.error('Failed to get task count:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get count of subtasks for a specific parent task
+   * @param {string} parentTaskId - Parent task ID
+   * @returns {Promise<number>} - Count of subtasks
+   */
+  async getSubtaskCount(parentTaskId) {
+    if (!parentTaskId || typeof parentTaskId !== 'string') {
+      throw new Error('Parent task ID is required and must be a string');
+    }
+
+    try {
+      const result = await this.executeQuery(
+        'SELECT COUNT(*) as count FROM tasks WHERE parent_id = ?',
+        [parentTaskId]
+      );
+      return result[0].count;
+    } catch (error) {
+      console.error('Failed to get subtask count:', error);
+      throw error;
+    }
   }
 
   /**

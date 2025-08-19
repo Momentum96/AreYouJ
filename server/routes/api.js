@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { broadcastToClients } from '../websocket/index.js';
 import { getClaudeSession } from '../claude/session-manager.js';
+import sqliteManager from '../db/sqlite.js';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 const SETTINGS_FILE = path.join(__dirname, '../data/settings.json');
@@ -1002,31 +1003,35 @@ router.put('/settings/home-path', (req, res) => {
 });
 
 // Tasks management endpoint
-// Get tasks.json from project home path
-router.get('/tasks', (req, res) => {
+// Get tasks from SQLite database
+router.get('/tasks', async (req, res) => {
   try {
     const settings = loadSettings();
     const projectHomePath = settings.projectHomePath;
-    const tasksFilePath = path.join(projectHomePath, 'docs', 'tasks.json');
+    const dbPath = path.join(projectHomePath, 'docs', 'tasks.db');
     
-    // Check if tasks.json exists
-    if (!fs.existsSync(tasksFilePath)) {
+    // Check if SQLite database exists
+    if (!fs.existsSync(dbPath)) {
       return res.status(404).json({
-        error: 'tasks.json not found in project docs directory',
-        path: tasksFilePath,
+        error: 'tasks.db not found in project docs directory',
+        path: dbPath,
         projectHomePath
       });
     }
 
-    // Read and parse tasks.json
-    const tasksData = fs.readFileSync(tasksFilePath, 'utf-8');
-    const parsedTasks = JSON.parse(tasksData);
+    // Initialize SQLite manager if needed
+    if (!sqliteManager.getDB()) {
+      await sqliteManager.initDB(projectHomePath);
+    }
+
+    // Get all tasks from SQLite in JSON-compatible format
+    const tasksData = await sqliteManager.getAllTasks();
     
     res.json({
       success: true,
       projectHomePath,
-      tasksFilePath,
-      ...parsedTasks
+      dbPath,
+      ...tasksData
     });
   } catch (error) {
     console.error('❌ Failed to load tasks:', error);
@@ -1038,54 +1043,49 @@ router.get('/tasks', (req, res) => {
 });
 
 // Delete task by ID
-router.delete('/tasks/:id', (req, res) => {
+router.delete('/tasks/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const settings = loadSettings();
     const projectHomePath = settings.projectHomePath;
-    const tasksFilePath = path.join(projectHomePath, 'docs', 'tasks.json');
+    const dbPath = path.join(projectHomePath, 'docs', 'tasks.db');
     
-    // Check if tasks.json exists
-    if (!fs.existsSync(tasksFilePath)) {
+    // Check if SQLite database exists
+    if (!fs.existsSync(dbPath)) {
       return res.status(404).json({
-        error: 'tasks.json not found in project docs directory',
-        path: tasksFilePath,
+        error: 'tasks.db not found in project docs directory',
+        path: dbPath,
         projectHomePath
       });
     }
 
-    // Read and parse tasks.json
-    const tasksData = fs.readFileSync(tasksFilePath, 'utf-8');
-    const parsedTasks = JSON.parse(tasksData);
-    
-    // Find task index
-    const taskIndex = parsedTasks.tasks.findIndex(task => task.id === id);
-    
-    if (taskIndex === -1) {
-      return res.status(404).json({
-        error: `Task with ID '${id}' not found`,
-        availableIds: parsedTasks.tasks.map(task => task.id)
-      });
+    // Initialize SQLite manager if needed
+    if (!sqliteManager.getDB()) {
+      await sqliteManager.initDB(projectHomePath);
     }
+
+    // Delete task from SQLite database
+    const result = await sqliteManager.deleteTask(id);
     
-    // Remove task from array
-    const deletedTask = parsedTasks.tasks.splice(taskIndex, 1)[0];
-    
-    // Write updated tasks back to file
-    fs.writeFileSync(tasksFilePath, JSON.stringify(parsedTasks, null, 2), 'utf-8');
-    
-    console.log(`✅ Successfully deleted task: ${deletedTask.title} (ID: ${id})`);
+    // Get remaining task count efficiently
+    const remainingTasks = await sqliteManager.getTaskCount();
     
     res.json({
       success: true,
-      deletedTask: {
-        id: deletedTask.id,
-        title: deletedTask.title
-      },
-      remainingTasks: parsedTasks.tasks.length
+      deletedTask: result.deletedTask,
+      remainingTasks: remainingTasks
     });
   } catch (error) {
     console.error('❌ Failed to delete task:', error);
+    
+    // Handle specific error cases
+    if (error.message.includes('not found')) {
+      return res.status(404).json({
+        error: error.message,
+        projectHomePath: loadSettings().projectHomePath
+      });
+    }
+    
     res.status(500).json({
       error: `Failed to delete task: ${error.message}`,
       projectHomePath: loadSettings().projectHomePath
@@ -1094,70 +1094,49 @@ router.delete('/tasks/:id', (req, res) => {
 });
 
 // Delete subtask by task ID and subtask ID
-router.delete('/tasks/:taskId/subtasks/:subtaskId', (req, res) => {
+router.delete('/tasks/:taskId/subtasks/:subtaskId', async (req, res) => {
   try {
     const { taskId, subtaskId } = req.params;
     const settings = loadSettings();
     const projectHomePath = settings.projectHomePath;
-    const tasksFilePath = path.join(projectHomePath, 'docs', 'tasks.json');
+    const dbPath = path.join(projectHomePath, 'docs', 'tasks.db');
     
-    // Check if tasks.json exists
-    if (!fs.existsSync(tasksFilePath)) {
+    // Check if SQLite database exists
+    if (!fs.existsSync(dbPath)) {
       return res.status(404).json({
-        error: 'tasks.json not found in project docs directory',
-        path: tasksFilePath,
+        error: 'tasks.db not found in project docs directory',
+        path: dbPath,
         projectHomePath
       });
     }
 
-    // Read and parse tasks.json
-    const tasksData = fs.readFileSync(tasksFilePath, 'utf-8');
-    const parsedTasks = JSON.parse(tasksData);
-    
-    // Find parent task
-    const task = parsedTasks.tasks.find(task => task.id === taskId);
-    if (!task) {
-      return res.status(404).json({
-        error: `Task with ID '${taskId}' not found`,
-        availableIds: parsedTasks.tasks.map(task => task.id)
-      });
+    // Initialize SQLite manager if needed
+    if (!sqliteManager.getDB()) {
+      await sqliteManager.initDB(projectHomePath);
     }
+
+    // Delete subtask from SQLite database
+    const result = await sqliteManager.deleteSubtask(taskId, subtaskId);
     
-    // Check if task has subtasks
-    if (!task.subtasks || !Array.isArray(task.subtasks)) {
-      return res.status(404).json({
-        error: `Task '${taskId}' has no subtasks`
-      });
-    }
-    
-    // Find subtask index
-    const subtaskIndex = task.subtasks.findIndex(subtask => subtask.id === subtaskId);
-    if (subtaskIndex === -1) {
-      return res.status(404).json({
-        error: `Subtask with ID '${subtaskId}' not found in task '${taskId}'`,
-        availableSubtaskIds: task.subtasks.map(subtask => subtask.id)
-      });
-    }
-    
-    // Remove subtask from array
-    const deletedSubtask = task.subtasks.splice(subtaskIndex, 1)[0];
-    
-    // Write updated tasks back to file
-    fs.writeFileSync(tasksFilePath, JSON.stringify(parsedTasks, null, 2), 'utf-8');
-    
-    console.log(`✅ Successfully deleted subtask: ${deletedSubtask.title} (ID: ${subtaskId}) from task ${taskId}`);
+    // Get remaining subtask count efficiently
+    const remainingSubtasks = await sqliteManager.getSubtaskCount(taskId);
     
     res.json({
       success: true,
-      deletedSubtask: {
-        id: deletedSubtask.id,
-        title: deletedSubtask.title,
-        parentTaskId: taskId
-      },
-      remainingSubtasks: task.subtasks.length
+      deletedSubtask: result.deletedSubtask,
+      remainingSubtasks: remainingSubtasks
     });
   } catch (error) {
     console.error('❌ Failed to delete subtask:', error);
+    
+    // Handle specific error cases
+    if (error.message.includes('not found')) {
+      return res.status(404).json({
+        error: error.message,
+        projectHomePath: loadSettings().projectHomePath
+      });
+    }
+    
     res.status(500).json({
       error: `Failed to delete subtask: ${error.message}`,
       projectHomePath: loadSettings().projectHomePath

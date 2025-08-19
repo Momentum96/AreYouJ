@@ -947,28 +947,63 @@ router.put('/settings/home-path', async (req, res) => {
       });
     }
 
+    // Security: Resolve path to prevent directory traversal attacks
+    const resolvedPath = path.resolve(projectHomePath);
+    
+    // Security: Check for path traversal attempts
+    if (!resolvedPath.startsWith(path.resolve('/'))) {
+      return res.status(400).json({
+        error: 'Invalid path: path traversal detected'
+      });
+    }
+
+    // Security: Prevent access to sensitive system directories
+    const forbiddenPaths = [
+      '/etc',
+      '/var/lib',
+      '/usr/bin',
+      '/bin',
+      '/sbin',
+      '/sys',
+      '/proc',
+      '/dev'
+    ];
+    
+    const isForbiddenPath = forbiddenPaths.some(forbidden => 
+      resolvedPath.startsWith(path.resolve(forbidden))
+    );
+    
+    if (isForbiddenPath) {
+      return res.status(403).json({
+        error: 'Access to system directories is not allowed'
+      });
+    }
+
     // Validate path exists
-    if (!fs.existsSync(projectHomePath)) {
+    if (!fs.existsSync(resolvedPath)) {
       return res.status(400).json({
         error: 'The specified path does not exist'
       });
     }
 
     // Check if path is a directory
-    const stats = fs.statSync(projectHomePath);
+    const stats = fs.statSync(resolvedPath);
     if (!stats.isDirectory()) {
       return res.status(400).json({
         error: 'The specified path is not a directory'
       });
     }
 
+    // Use resolved path for the rest of the operations
+    const finalProjectHomePath = resolvedPath;
+
     const settings = loadSettings();
     const oldPath = settings.projectHomePath;
-    settings.projectHomePath = projectHomePath;
+    settings.projectHomePath = finalProjectHomePath;
     
     // 새로운 경로가 다르면 최근 경로에 추가
-    if (oldPath !== projectHomePath) {
-      addToRecentPaths(settings, projectHomePath);
+    if (oldPath !== finalProjectHomePath) {
+      addToRecentPaths(settings, finalProjectHomePath);
     }
     
     const saved = saveSettings(settings);
@@ -979,19 +1014,24 @@ router.put('/settings/home-path', async (req, res) => {
     }
 
     // Update Claude session manager's working directory if changed
-    if (oldPath !== projectHomePath) {
-      claudeSession.setWorkingDirectory(projectHomePath);
-      // Also reset SQLite connection to point to the new project home
+    if (oldPath !== finalProjectHomePath) {
+      claudeSession.setWorkingDirectory(finalProjectHomePath);
+      
+      // Safely switch SQLite connection to new project home
       try {
         await sqliteManager.closeDB();
+        await sqliteManager.initDB(finalProjectHomePath, true); // true indicates project switch
+        console.log('✅ Successfully switched SQLite database to new project path');
       } catch (e) {
-        console.warn('Warning: failed to close previous SQLite DB connection:', e.message);
-      }
-      try {
-        await sqliteManager.initDB(projectHomePath);
-      } catch (e) {
-        console.warn('Warning: failed to initialize SQLite DB for new project home:', e.message);
+        console.warn('Warning: failed to switch SQLite DB to new project home:', e.message);
         // Do not fail the settings update; tasks endpoint will report DB issues as needed
+        // Try to reinitialize with previous path as fallback
+        try {
+          await sqliteManager.initDB(oldPath || finalProjectHomePath, true);
+          console.log('⚠️ Fallback: SQLite reconnected to previous/current path');
+        } catch (fallbackError) {
+          console.error('❌ Critical: Could not restore SQLite connection:', fallbackError.message);
+        }
       }
     }
 

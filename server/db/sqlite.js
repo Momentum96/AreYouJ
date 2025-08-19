@@ -8,6 +8,11 @@ class SQLiteManager {
   constructor() {
     this.db = null;
     this.dbPath = null;
+    this.connectionState = 'disconnected'; // 'disconnected', 'connecting', 'connected', 'switching'
+    this.pendingRequests = [];
+    this.connectionTimeout = null;
+    this.lastActivity = null;
+    this.IDLE_TIMEOUT = 30 * 60 * 1000; // 30 minutes idle timeout
     this._setupProcessHandlers();
   }
 
@@ -36,11 +41,24 @@ class SQLiteManager {
   }
 
   /**
-   * Initialize SQLite database connection
+   * Initialize SQLite database connection with state management
    * @param {string} projectHomePath - Path to project home directory
+   * @param {boolean} isSwitch - Whether this is a project switch
    * @returns {Promise<boolean>} - Success status
    */
-  async initDB(projectHomePath) {
+  async initDB(projectHomePath, isSwitch = false) {
+    // If we're already connecting to the same path, wait for it
+    if (this.connectionState === 'connecting' && this.dbPath === path.join(projectHomePath, 'docs', 'tasks.db')) {
+      return this._waitForConnection();
+    }
+
+    // If we're switching, set state appropriately
+    if (isSwitch) {
+      this.connectionState = 'switching';
+    } else {
+      this.connectionState = 'connecting';
+    }
+
     try {
       this.dbPath = path.join(projectHomePath, 'docs', 'tasks.db');
       
@@ -54,27 +72,39 @@ class SQLiteManager {
       const dbExists = fs.existsSync(this.dbPath);
       
       return new Promise((resolve, reject) => {
-        this.db = new sqlite3.Database(this.dbPath, (err) => {
+        this.db = new sqlite3.Database(this.dbPath, async (err) => {
           if (err) {
             console.error('Failed to open SQLite database:', err);
+            this.connectionState = 'disconnected';
+            this._rejectPendingRequests(err);
             reject(err);
             return;
           }
           
           console.log(`📁 SQLite database connected: ${this.dbPath}`);
           
-          // If database is new, create schema
-          if (!dbExists) {
-            this.createSchema()
-              .then(() => resolve(true))
-              .catch(reject);
-          } else {
+          try {
+            // If database is new, create schema
+            if (!dbExists) {
+              await this.createSchema();
+            }
+            
+            this.connectionState = 'connected';
+            this.lastActivity = Date.now();
+            this._startIdleTimer();
+            this._resolvePendingRequests();
             resolve(true);
+          } catch (schemaError) {
+            this.connectionState = 'disconnected';
+            this._rejectPendingRequests(schemaError);
+            reject(schemaError);
           }
         });
       });
     } catch (error) {
       console.error('Failed to initialize SQLite database:', error);
+      this.connectionState = 'disconnected';
+      this._rejectPendingRequests(error);
       throw error;
     }
   }
@@ -130,12 +160,78 @@ class SQLiteManager {
   }
 
   /**
+   * Wait for current connection to be established
+   * @private
+   */
+  async _waitForConnection() {
+    return new Promise((resolve, reject) => {
+      this.pendingRequests.push({ resolve, reject });
+    });
+  }
+
+  /**
+   * Resolve all pending requests
+   * @private
+   */
+  _resolvePendingRequests() {
+    const requests = this.pendingRequests.splice(0);
+    requests.forEach(({ resolve }) => resolve(true));
+  }
+
+  /**
+   * Reject all pending requests
+   * @private
+   */
+  _rejectPendingRequests(error) {
+    const requests = this.pendingRequests.splice(0);
+    requests.forEach(({ reject }) => reject(error));
+  }
+
+  /**
+   * Start idle timer for connection cleanup
+   * @private
+   */
+  _startIdleTimer() {
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+    }
+    
+    this.connectionTimeout = setTimeout(() => {
+      if (this.connectionState === 'connected' && 
+          Date.now() - this.lastActivity > this.IDLE_TIMEOUT) {
+        console.log('📁 Closing idle SQLite connection');
+        this.closeDB().catch(console.error);
+      }
+    }, this.IDLE_TIMEOUT);
+  }
+
+  /**
+   * Ensure database connection is ready
+   * @private
+   */
+  async _ensureConnection() {
+    this.lastActivity = Date.now();
+    
+    if (this.connectionState === 'connected' && this.db) {
+      return;
+    }
+
+    if (this.connectionState === 'connecting' || this.connectionState === 'switching') {
+      return this._waitForConnection();
+    }
+
+    throw new Error('Database not initialized. Call initDB() first.');
+  }
+
+  /**
    * Execute SQL query with parameters
    * @param {string} sql - SQL query
    * @param {Array} params - Query parameters
    * @returns {Promise<Object>} - Query result
    */
   async executeQuery(sql, params = []) {
+    await this._ensureConnection();
+    
     return new Promise((resolve, reject) => {
       if (!this.db) {
         reject(new Error('Database not initialized'));
@@ -149,6 +245,7 @@ class SQLiteManager {
           console.error('Params:', params);
           reject(err);
         } else {
+          this.lastActivity = Date.now();
           resolve(rows);
         }
       });
@@ -162,6 +259,8 @@ class SQLiteManager {
    * @returns {Promise<Object>} - Statement result with lastID and changes
    */
   async executeStatement(sql, params = []) {
+    await this._ensureConnection();
+    
     return new Promise((resolve, reject) => {
       if (!this.db) {
         reject(new Error('Database not initialized'));
@@ -490,8 +589,15 @@ class SQLiteManager {
    * @returns {Promise<void>}
    */
   async closeDB() {
+    // Clear idle timer
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = null;
+    }
+
     return new Promise((resolve, reject) => {
       if (this.db) {
+        this.connectionState = 'disconnected';
         this.db.close((err) => {
           if (err) {
             console.error('Failed to close database:', err);
@@ -500,10 +606,15 @@ class SQLiteManager {
             console.log('📁 SQLite database connection closed');
             this.db = null;
             this.dbPath = null;
+            this.lastActivity = null;
             resolve();
           }
         });
       } else {
+        this.connectionState = 'disconnected';
+        this.db = null;
+        this.dbPath = null;
+        this.lastActivity = null;
         resolve();
       }
     });

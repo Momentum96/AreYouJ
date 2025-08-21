@@ -113,7 +113,7 @@ function App() {
       }
     };
 
-    const handleWorkingDirectoryChanged = (message: any) => {
+    const handleWorkingDirectoryChanged = () => {
       setTimeout(() => {
         fetchTasks(true);
       }, 100);

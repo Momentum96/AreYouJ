@@ -3,10 +3,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
-import { Play, Square, Trash2, Wifi, WifiOff, ChevronUp, ChevronDown, Edit, Save, X } from 'lucide-react';
+import { Play, Square, Trash2, Wifi, WifiOff, ChevronUp, ChevronDown, Edit, Save, X, Bell, BellOff } from 'lucide-react';
 import { apiClient, type QueueMessage, type QueueStatus } from '../utils/api';
 import { wsClient } from '../utils/websocket';
-import { ClaudeTerminalRenderer } from '../utils/claude-terminal.js';
+import { ClaudeTerminalRenderer } from '../utils/claude-terminal';
+import NotificationManager from '../utils/notifications';
 
 export const Automation = () => {
   const [messages, setMessages] = useState<QueueMessage[]>([]);
@@ -24,6 +25,10 @@ export const Automation = () => {
   // 메시지 수정 관련 상태들
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
+
+  // 알림 관련 상태들
+  const [notificationsEnabled] = useState(NotificationManager.isEnabled());
+  const [notificationPermission, setNotificationPermission] = useState<'granted' | 'denied' | 'default'>('default');
 
   // Claude Terminal Renderer (Claude-Autopilot style)
   const terminalRenderer = useRef<ClaudeTerminalRenderer>(new ClaudeTerminalRenderer());
@@ -83,6 +88,80 @@ export const Automation = () => {
     // Check current session status when component mounts
     checkSessionStatus();
     
+    // 알림 권한 자동 요청 - 세밀한 에러 처리 포함
+    const initializeNotifications = async () => {
+      try {
+        if (!NotificationManager.isSupported()) {
+          console.warn('⚠️ 이 브라우저는 알림을 지원하지 않습니다.');
+          setNotificationPermission('denied');
+          return;
+        }
+
+        const currentPermission = Notification.permission;
+        setNotificationPermission(currentPermission);
+        
+        // 권한이 아직 결정되지 않은 경우 자동으로 요청
+        if (currentPermission === 'default') {
+          console.log('🔔 자동으로 알림 권한을 요청합니다...');
+          
+          try {
+            const granted = await NotificationManager.requestPermission();
+            setNotificationPermission(granted ? 'granted' : 'denied');
+            
+            if (granted) {
+              console.log('✅ 알림 권한이 허용되었습니다!');
+              
+              try {
+                // 권한 허용 시 테스트 알림 (약간의 지연 후)
+                setTimeout(() => {
+                  try {
+                    NotificationManager.showTestNotification();
+                  } catch (testError) {
+                    console.error('테스트 알림 표시 실패:', testError);
+                  }
+                }, 1000);
+              } catch (testSetupError) {
+                console.error('테스트 알림 설정 실패:', testSetupError);
+              }
+            } else {
+              console.log('❌ 알림 권한이 거부되었습니다.');
+              setError('알림 권한이 거부되었습니다. 브라우저 설정에서 수동으로 허용해주세요.');
+              
+              // 5초 후 에러 메시지 제거
+              setTimeout(() => {
+                setError(null);
+              }, 5000);
+            }
+          } catch (permissionError) {
+            console.error('알림 권한 요청 실패:', permissionError);
+            setNotificationPermission('denied');
+            setError('알림 권한 요청 중 오류가 발생했습니다. 브라우저 설정을 확인해주세요.');
+            
+            // 5초 후 에러 메시지 제거
+            setTimeout(() => {
+              setError(null);
+            }, 5000);
+          }
+        } else if (currentPermission === 'granted') {
+          console.log('✅ 알림 권한이 이미 허용되어 있습니다.');
+        } else {
+          console.log('❌ 알림 권한이 이미 거부되어 있습니다.');
+        }
+      } catch (initError) {
+        console.error('알림 초기화 중 예상치 못한 오류 발생:', initError);
+        setNotificationPermission('denied');
+        setError('알림 시스템 초기화에 실패했습니다. 페이지를 새로고침 해주세요.');
+        
+        // 10초 후 에러 메시지 제거
+        setTimeout(() => {
+          setError(null);
+        }, 10000);
+      }
+    };
+    
+    // 컴포넌트 마운트 직후 알림 권한 요청
+    initializeNotifications();
+    
     // Check if we need to auto-start processing when returning to this page
     setTimeout(() => {
       checkAndTriggerAutoProcessing();
@@ -129,7 +208,55 @@ export const Automation = () => {
     };
 
     const handleQueueUpdate = (message: any) => {
-      setMessages(message.data.messages);
+      const newMessages = message.data.messages;
+      
+      // 상태 변경 감지를 위해 이전 메시지들과 비교
+      setMessages(prevMessages => {
+        console.log('🔄 메시지 큐 업데이트 수신:', {
+          newCount: newMessages.length,
+          oldCount: prevMessages.length,
+          notificationsEnabled,
+          notificationPermission
+        });
+
+        // 상태 변경 감지 및 알림 처리
+        newMessages.forEach((newMsg: QueueMessage) => {
+          const oldMsg = prevMessages.find(m => m.id === newMsg.id);
+          
+          // 상태가 변경된 경우 로그 출력
+          if (oldMsg && oldMsg.status !== newMsg.status) {
+            console.log(`📢 상태 변경 감지: [${newMsg.id}] ${oldMsg.status} → ${newMsg.status}`);
+            
+            // processing, completed, error 상태일 때만 알림
+            if (['processing', 'completed', 'error'].includes(newMsg.status)) {
+              
+              // 현재 알림 상태를 실시간으로 체크
+              const currentNotificationEnabled = NotificationManager.isEnabled();
+              const currentNotificationPermission = Notification.permission;
+              
+              console.log('🔔 알림 조건 체크:', {
+                상태: newMsg.status,
+                메시지: newMsg.message.substring(0, 50) + '...',
+                알림활성화: currentNotificationEnabled,
+                브라우저권한: currentNotificationPermission
+              });
+              
+              if (currentNotificationEnabled && currentNotificationPermission === 'granted') {
+                console.log('✅ 알림 전송 중...');
+                NotificationManager.showTaskNotification(
+                  newMsg.status, 
+                  newMsg.message,
+                  newMsg.id
+                );
+              } else {
+                console.log('❌ 알림 전송 실패 - 조건 불만족');
+              }
+            }
+          }
+        });
+        
+        return newMessages;
+      });
     };
 
     const handleStatusUpdate = (message: any) => {
@@ -250,6 +377,11 @@ export const Automation = () => {
       wsClient.off('process-error', handleProcessError);
       wsClient.off('working-directory-changed', handleWorkingDirectoryChanged);
       
+      // Terminal renderer cleanup (메모리 누수 방지)
+      if (terminalRenderer.current) {
+        terminalRenderer.current.dispose();
+      }
+      
       // Note: WebSocket connection is managed globally by App component
     };
   }, [checkSessionStatus]);
@@ -344,6 +476,8 @@ export const Automation = () => {
     
     return realContentIndicators.some(indicator => content.includes(indicator));
   };
+
+  // 알림 관련 함수들은 initializeNotifications 함수에서 처리됨
 
   const addMessage = async () => {
     // 입력 검증 강화
@@ -641,6 +775,52 @@ export const Automation = () => {
         
         {/* Status Indicators */}
         <div className="flex items-center gap-4 flex-shrink-0">
+          {/* Notification Status Indicator */}
+          <div
+            className="flex items-center gap-2 px-2 py-1"
+            title={
+              notificationPermission === 'granted' && notificationsEnabled 
+                ? "알림 활성화됨" 
+                : notificationPermission === 'denied'
+                ? "알림 권한 거부됨"
+                : notificationPermission === 'default'
+                ? "알림 권한 대기 중"
+                : "알림 비활성화됨"
+            }
+          >
+            {(() => {
+              if (notificationPermission === 'granted' && notificationsEnabled) {
+                return (
+                  <>
+                    <Bell className="w-4 h-4 text-blue-500" />
+                    <span className="text-xs text-blue-500 hidden sm:inline">알림 켜짐</span>
+                  </>
+                );
+              } else if (notificationPermission === 'denied') {
+                return (
+                  <>
+                    <BellOff className="w-4 h-4 text-red-500" />
+                    <span className="text-xs text-red-500 hidden sm:inline">권한 거부됨</span>
+                  </>
+                );
+              } else if (notificationPermission === 'default') {
+                return (
+                  <>
+                    <Bell className="w-4 h-4 text-yellow-500" />
+                    <span className="text-xs text-yellow-500 hidden sm:inline">권한 요청</span>
+                  </>
+                );
+              } else {
+                return (
+                  <>
+                    <BellOff className="w-4 h-4 text-gray-500" />
+                    <span className="text-xs text-gray-500 hidden sm:inline">알림 꺼짐</span>
+                  </>
+                );
+              }
+            })()}
+          </div>
+
           {/* WebSocket Status */}
           <div className="flex items-center gap-2">
             {wsConnected ? (
@@ -776,7 +956,7 @@ export const Automation = () => {
                           variant="ghost"
                           size="sm"
                           onClick={() => editingMessageId === message.id ? saveEditMessage() : startEditMessage(message)}
-                          disabled={isLoading || (editingMessageId && editingMessageId !== message.id)}
+                          disabled={isLoading || Boolean(editingMessageId && editingMessageId !== message.id)}
                           className={`opacity-60 group-hover:opacity-100 transition-all disabled:opacity-30 ${
                             editingMessageId === message.id 
                               ? 'text-green-600 hover:text-green-700' 

@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "dev:server": "npm run cleanup && nodemon server/index.js",
     "dev:full": "concurrently --kill-others --kill-others-on-fail \"npm run dev\" \"npm run dev:server\"",
     "cleanup": "bash server/cleanup.sh",

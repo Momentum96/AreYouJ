@@ -6,8 +6,8 @@ import { Badge } from './ui/badge';
 import { Play, Square, Trash2, Wifi, WifiOff, ChevronUp, ChevronDown, Edit, Save, X, Bell, BellOff } from 'lucide-react';
 import { apiClient, type QueueMessage, type QueueStatus } from '../utils/api';
 import { wsClient } from '../utils/websocket';
-import { ClaudeTerminalRenderer } from '../utils/claude-terminal.js';
-import NotificationManager from '../utils/notifications.js';
+import { ClaudeTerminalRenderer } from '../utils/claude-terminal';
+import NotificationManager from '../utils/notifications';
 
 export const Automation = () => {
   const [messages, setMessages] = useState<QueueMessage[]>([]);
@@ -27,7 +27,7 @@ export const Automation = () => {
   const [editingText, setEditingText] = useState('');
 
   // 알림 관련 상태들
-  const [notificationsEnabled, setNotificationsEnabled] = useState(NotificationManager.isEnabled());
+  const [notificationsEnabled] = useState(NotificationManager.isEnabled());
   const [notificationPermission, setNotificationPermission] = useState<'granted' | 'denied' | 'default'>('default');
 
   // Claude Terminal Renderer (Claude-Autopilot style)
@@ -88,28 +88,74 @@ export const Automation = () => {
     // Check current session status when component mounts
     checkSessionStatus();
     
-    // 알림 권한 자동 요청
+    // 알림 권한 자동 요청 - 세밀한 에러 처리 포함
     const initializeNotifications = async () => {
-      if (NotificationManager.isSupported()) {
+      try {
+        if (!NotificationManager.isSupported()) {
+          console.warn('⚠️ 이 브라우저는 알림을 지원하지 않습니다.');
+          setNotificationPermission('denied');
+          return;
+        }
+
         const currentPermission = Notification.permission;
         setNotificationPermission(currentPermission);
         
         // 권한이 아직 결정되지 않은 경우 자동으로 요청
         if (currentPermission === 'default') {
           console.log('🔔 자동으로 알림 권한을 요청합니다...');
-          const granted = await NotificationManager.requestPermission();
-          setNotificationPermission(granted ? 'granted' : 'denied');
           
-          if (granted) {
-            console.log('✅ 알림 권한이 허용되었습니다!');
-            // 권한 허용 시 테스트 알림 (약간의 지연 후)
+          try {
+            const granted = await NotificationManager.requestPermission();
+            setNotificationPermission(granted ? 'granted' : 'denied');
+            
+            if (granted) {
+              console.log('✅ 알림 권한이 허용되었습니다!');
+              
+              try {
+                // 권한 허용 시 테스트 알림 (약간의 지연 후)
+                setTimeout(() => {
+                  try {
+                    NotificationManager.showTestNotification();
+                  } catch (testError) {
+                    console.error('테스트 알림 표시 실패:', testError);
+                  }
+                }, 1000);
+              } catch (testSetupError) {
+                console.error('테스트 알림 설정 실패:', testSetupError);
+              }
+            } else {
+              console.log('❌ 알림 권한이 거부되었습니다.');
+              setError('알림 권한이 거부되었습니다. 브라우저 설정에서 수동으로 허용해주세요.');
+              
+              // 5초 후 에러 메시지 제거
+              setTimeout(() => {
+                setError(null);
+              }, 5000);
+            }
+          } catch (permissionError) {
+            console.error('알림 권한 요청 실패:', permissionError);
+            setNotificationPermission('denied');
+            setError('알림 권한 요청 중 오류가 발생했습니다. 브라우저 설정을 확인해주세요.');
+            
+            // 5초 후 에러 메시지 제거
             setTimeout(() => {
-              NotificationManager.showTestNotification();
-            }, 1000);
-          } else {
-            console.log('❌ 알림 권한이 거부되었습니다.');
+              setError(null);
+            }, 5000);
           }
+        } else if (currentPermission === 'granted') {
+          console.log('✅ 알림 권한이 이미 허용되어 있습니다.');
+        } else {
+          console.log('❌ 알림 권한이 이미 거부되어 있습니다.');
         }
+      } catch (initError) {
+        console.error('알림 초기화 중 예상치 못한 오류 발생:', initError);
+        setNotificationPermission('denied');
+        setError('알림 시스템 초기화에 실패했습니다. 페이지를 새로고침 해주세요.');
+        
+        // 10초 후 에러 메시지 제거
+        setTimeout(() => {
+          setError(null);
+        }, 10000);
       }
     };
     
@@ -331,6 +377,11 @@ export const Automation = () => {
       wsClient.off('process-error', handleProcessError);
       wsClient.off('working-directory-changed', handleWorkingDirectoryChanged);
       
+      // Terminal renderer cleanup (메모리 누수 방지)
+      if (terminalRenderer.current) {
+        terminalRenderer.current.dispose();
+      }
+      
       // Note: WebSocket connection is managed globally by App component
     };
   }, [checkSessionStatus]);
@@ -426,23 +477,7 @@ export const Automation = () => {
     return realContentIndicators.some(indicator => content.includes(indicator));
   };
 
-  // 알림 관련 함수들
-  // 알림 권한 요청 함수 (필요시 수동으로 호출 가능)
-  const requestNotificationPermission = async () => {
-    if (!NotificationManager.isSupported()) {
-      alert('이 브라우저는 알림을 지원하지 않습니다.');
-      return;
-    }
-
-    const granted = await NotificationManager.requestPermission();
-    setNotificationPermission(granted ? 'granted' : 'denied');
-    
-    if (granted) {
-      NotificationManager.showTestNotification();
-    } else {
-      alert('알림 권한이 거부되었습니다. 브라우저 설정에서 수동으로 허용해주세요.');
-    }
-  };
+  // 알림 관련 함수들은 initializeNotifications 함수에서 처리됨
 
   const addMessage = async () => {
     // 입력 검증 강화
@@ -921,7 +956,7 @@ export const Automation = () => {
                           variant="ghost"
                           size="sm"
                           onClick={() => editingMessageId === message.id ? saveEditMessage() : startEditMessage(message)}
-                          disabled={isLoading || (editingMessageId && editingMessageId !== message.id)}
+                          disabled={isLoading || Boolean(editingMessageId && editingMessageId !== message.id)}
                           className={`opacity-60 group-hover:opacity-100 transition-all disabled:opacity-30 ${
                             editingMessageId === message.id 
                               ? 'text-green-600 hover:text-green-700' 

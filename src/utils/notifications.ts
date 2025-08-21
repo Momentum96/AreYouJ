@@ -1,12 +1,27 @@
+// 알림 상태 타입 정의 (QueueMessage의 status와 호환)
+type TaskStatus = 'pending' | 'processing' | 'completed' | 'error';
+
+// 알림 설정 타입
+interface NotificationConfig {
+  title: string;
+  body: string;
+  icon: string;
+  sound: string | null;
+  requireInteraction?: boolean;
+}
+
+// 사운드 타입 정의
+type SoundType = 'success' | 'error';
+
 /**
  * 브라우저 알림 및 사운드 알림을 관리하는 클래스
  */
 class NotificationManager {
-  static isSupported() {
+  static isSupported(): boolean {
     return "Notification" in window;
   }
 
-  static async requestPermission() {
+  static async requestPermission(): Promise<boolean> {
     if (!this.isSupported()) {
       console.warn('이 브라우저는 알림을 지원하지 않습니다.');
       return false;
@@ -30,13 +45,13 @@ class NotificationManager {
     }
   }
 
-  static show(title, options = {}) {
+  static show(title: string, options: NotificationOptions = {}): Notification | null {
     if (!this.isSupported() || Notification.permission !== "granted") {
       console.log('알림을 표시할 수 없습니다:', title);
       return null;
     }
 
-    const defaultOptions = {
+    const defaultOptions: NotificationOptions = {
       icon: '/favicon.ico', // 기본 아이콘
       badge: '/favicon.ico',
       tag: 'automation-task', // 같은 태그의 알림은 덮어씀
@@ -69,8 +84,14 @@ class NotificationManager {
   /**
    * 작업 상태 변경에 따른 알림 표시
    */
-  static showTaskNotification(status, message, taskId = null) {
-    const statusConfig = {
+  static showTaskNotification(status: TaskStatus, message: string, taskId: string | null = null): Notification | null {
+    const statusConfig: Record<TaskStatus, NotificationConfig> = {
+      'pending': {
+        title: '⏳ 작업 대기',
+        body: `대기: ${this.truncateMessage(message)}`,
+        icon: '/favicon.ico',
+        sound: null // 대기는 조용히
+      },
       'processing': {
         title: '🚀 작업 시작됨',
         body: this.truncateMessage(message),
@@ -95,7 +116,7 @@ class NotificationManager {
     const config = statusConfig[status];
     if (!config) {
       console.warn('알 수 없는 작업 상태:', status);
-      return;
+      return null;
     }
 
     // 알림 표시
@@ -108,7 +129,7 @@ class NotificationManager {
 
     // 사운드 재생
     if (config.sound) {
-      this.playSound(config.sound);
+      this.playSound(config.sound as SoundType);
     }
 
     return notification;
@@ -117,7 +138,7 @@ class NotificationManager {
   /**
    * 메시지 길이 제한 (알림에 너무 긴 텍스트 방지)
    */
-  static truncateMessage(message, maxLength = 100) {
+  static truncateMessage(message: string | null | undefined, maxLength: number = 100): string {
     if (!message || typeof message !== 'string') return '메시지 없음';
     return message.length > maxLength ? 
            message.substring(0, maxLength) + '...' : message;
@@ -126,10 +147,10 @@ class NotificationManager {
   /**
    * 사운드 재생
    */
-  static async playSound(soundType) {
+  static async playSound(soundType: SoundType): Promise<boolean> {
     try {
       // 동적 import로 audio utils 로드
-      const { playSuccessSound, playErrorSound } = await import('./audio-utils.js');
+      const { playSuccessSound, playErrorSound } = await import('./audio-utils');
       
       switch (soundType) {
         case 'success':
@@ -149,7 +170,7 @@ class NotificationManager {
   /**
    * 사운드 볼륨 설정 가져오기 (로컬스토리지에서)
    */
-  static getSoundVolume() {
+  static getSoundVolume(): number {
     try {
       const volume = localStorage.getItem('notification-sound-volume');
       return volume ? parseFloat(volume) : 0.7; // 기본 볼륨 70%
@@ -161,7 +182,7 @@ class NotificationManager {
   /**
    * 사운드 볼륨 설정 저장
    */
-  static setSoundVolume(volume) {
+  static setSoundVolume(volume: number): number {
     try {
       const clampedVolume = Math.max(0, Math.min(1, volume));
       localStorage.setItem('notification-sound-volume', clampedVolume.toString());
@@ -175,7 +196,7 @@ class NotificationManager {
   /**
    * 알림 설정 상태 확인
    */
-  static isEnabled() {
+  static isEnabled(): boolean {
     try {
       return localStorage.getItem('notifications-enabled') !== 'false';
     } catch {
@@ -186,7 +207,7 @@ class NotificationManager {
   /**
    * 알림 활성화/비활성화 설정
    */
-  static setEnabled(enabled) {
+  static setEnabled(enabled: boolean): void {
     try {
       localStorage.setItem('notifications-enabled', enabled.toString());
     } catch (error) {
@@ -197,7 +218,7 @@ class NotificationManager {
   /**
    * 테스트 알림 보내기
    */
-  static showTestNotification() {
+  static showTestNotification(): void {
     if (this.isEnabled() && Notification.permission === "granted") {
       this.show("테스트 알림", {
         body: "알림이 정상적으로 작동합니다! 🎉",

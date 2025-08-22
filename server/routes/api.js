@@ -602,227 +602,413 @@ router.get('/status', (req, res) => {
   });
 });
 
-// Get queue messages
+// Get queue messages (Task 2.3: Session-Aware Message Routing)
 router.get('/queue', (req, res) => {
-  const messageQueue = claudeSession.getMessageQueue();
-  res.json({
-    messages: messageQueue,
-    total: messageQueue.length
-  });
+  try {
+    const { sessionId } = req.query;
+    
+    // Route to specific session if sessionId provided
+    if (sessionId) {
+      const sessionDetails = sessionOrchestrator.getSessionDetails(sessionId);
+      
+      if (!sessionDetails) {
+        return res.status(404).json({
+          error: `Session ${sessionId} not found`,
+          sessionId
+        });
+      }
+      
+      const messageQueue = sessionDetails.messageQueue || [];
+      res.json({
+        messages: messageQueue,
+        total: messageQueue.length,
+        sessionId,
+        sessionStatus: sessionDetails.metadata.status
+      });
+    } else {
+      // Legacy behavior: use default single session
+      const messageQueue = claudeSession.getMessageQueue();
+      res.json({
+        messages: messageQueue,
+        total: messageQueue.length,
+        sessionId: 'legacy' // Indicate this is legacy single session
+      });
+    }
+  } catch (error) {
+    console.error('❌ Failed to get queue messages:', error);
+    res.status(500).json({
+      error: `Failed to get queue messages: ${error.message}`,
+      sessionId: req.query.sessionId || 'legacy'
+    });
+  }
 });
 
-// Add message to queue (Claude-Autopilot style with auto-processing)
+// Add message to queue (Task 2.3: Session-Aware Message Routing)
 router.post('/queue/add', async (req, res) => {
-  const { message } = req.body;
-  
-  if (!message || typeof message !== 'string') {
-    return res.status(400).json({
-      error: 'Message is required and must be a string'
+  try {
+    const { message } = req.body;
+    const { sessionId } = req.query;
+    
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({
+        error: 'Message is required and must be a string',
+        sessionId: sessionId || 'legacy'
+      });
+    }
+
+    let targetSession;
+    let sessionContext = 'legacy';
+    
+    // Route to specific session if sessionId provided
+    if (sessionId) {
+      targetSession = sessionOrchestrator.getSession(sessionId);
+      
+      if (!targetSession) {
+        return res.status(404).json({
+          error: `Session ${sessionId} not found`,
+          sessionId
+        });
+      }
+      
+      sessionContext = sessionId;
+    } else {
+      // Legacy behavior: use default single session
+      targetSession = claudeSession;
+    }
+
+    const newMessage = {
+      id: Date.now().toString(),
+      message: message.trim(),
+      status: 'pending',
+      createdAt: targetSession.createLocalTimeString(),
+      completedAt: null,
+      output: null,
+      sessionId: sessionContext // Track which session this belongs to
+    };
+
+    // Add message to target session's queue (this triggers auto-processing)
+    targetSession.addMessageToQueue(newMessage);
+    
+    const messageQueue = targetSession.getMessageQueue();
+
+    // Broadcast queue update with session context
+    broadcastToClients({
+      type: 'queue-update',
+      sessionId: sessionContext,
+      data: {
+        messages: messageQueue,
+        total: messageQueue.length
+      }
+    });
+
+    // Broadcast status update with session context
+    broadcastToClients({
+      type: 'status-update',
+      sessionId: sessionContext,
+      data: {
+        status: 'ready',
+        queue: {
+          total: messageQueue.length,
+          pending: messageQueue.filter(m => m.status === 'pending').length,
+          processing: messageQueue.filter(m => m.status === 'processing').length,
+          completed: messageQueue.filter(m => m.status === 'completed').length,
+          error: messageQueue.filter(m => m.status === 'error').length
+        },
+        processing: sessionContext === 'legacy' ? processingStatus : {
+          isProcessing: !!targetSession.currentlyProcessing,
+          currentMessage: targetSession.currentlyProcessing?.id || null
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Message added to queue',
+      messageId: newMessage.id,
+      queueLength: messageQueue.length,
+      sessionId: sessionContext,
+      autoProcessing: true
+    });
+  } catch (error) {
+    console.error('❌ Failed to add message to queue:', error);
+    res.status(500).json({
+      error: `Failed to add message to queue: ${error.message}`,
+      sessionId: req.query.sessionId || 'legacy'
     });
   }
-
-  const newMessage = {
-    id: Date.now().toString(),
-    message: message.trim(),
-    status: 'pending',
-    createdAt: claudeSession.createLocalTimeString(),
-    completedAt: null,
-    output: null
-  };
-
-  // Add message to session manager's queue (this triggers auto-processing)
-  claudeSession.addMessageToQueue(newMessage);
-  
-  const messageQueue = claudeSession.getMessageQueue();
-
-  // Broadcast queue update
-  broadcastToClients({
-    type: 'queue-update',
-    data: {
-      messages: messageQueue,
-      total: messageQueue.length
-    }
-  });
-
-  // Broadcast status update
-  broadcastToClients({
-    type: 'status-update',
-    data: {
-      status: 'ready',
-      queue: {
-        total: messageQueue.length,
-        pending: messageQueue.filter(m => m.status === 'pending').length,
-        processing: messageQueue.filter(m => m.status === 'processing').length,
-        completed: messageQueue.filter(m => m.status === 'completed').length,
-        error: messageQueue.filter(m => m.status === 'error').length
-      },
-      processing: processingStatus
-    }
-  });
-
-  res.json({
-    success: true,
-    message: 'Message added to queue',
-    messageId: newMessage.id,
-    queueLength: messageQueue.length,
-    autoProcessing: true
-  });
 });
 
-// Update message in queue
+// Update message in queue (Task 2.3: Session-Aware Message Routing)
 router.put('/queue/:id', (req, res) => {
-  const { id } = req.params;
-  const { message } = req.body;
-  
-  if (!message || typeof message !== 'string') {
-    return res.status(400).json({
-      error: 'Message is required and must be a string'
+  try {
+    const { id } = req.params;
+    const { message } = req.body;
+    const { sessionId } = req.query;
+    
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({
+        error: 'Message is required and must be a string',
+        sessionId: sessionId || 'legacy'
+      });
+    }
+
+    let targetSession;
+    let sessionContext = 'legacy';
+    
+    // Route to specific session if sessionId provided
+    if (sessionId) {
+      targetSession = sessionOrchestrator.getSession(sessionId);
+      
+      if (!targetSession) {
+        return res.status(404).json({
+          error: `Session ${sessionId} not found`,
+          sessionId
+        });
+      }
+      
+      sessionContext = sessionId;
+    } else {
+      // Legacy behavior: use default single session
+      targetSession = claudeSession;
+    }
+
+    const updatedMessage = targetSession.updateMessageInQueue(id, message.trim());
+    
+    if (!updatedMessage) {
+      return res.status(404).json({
+        error: 'Message not found',
+        messageId: id,
+        sessionId: sessionContext
+      });
+    }
+
+    const messageQueue = targetSession.getMessageQueue();
+    
+    // Broadcast queue update with session context
+    broadcastToClients({
+      type: 'queue-update',
+      sessionId: sessionContext,
+      data: {
+        messages: messageQueue,
+        total: messageQueue.length
+      }
+    });
+
+    // Broadcast status update with session context
+    broadcastToClients({
+      type: 'status-update',
+      sessionId: sessionContext,
+      data: {
+        status: 'ready',
+        queue: {
+          total: messageQueue.length,
+          pending: messageQueue.filter(m => m.status === 'pending').length,
+          processing: messageQueue.filter(m => m.status === 'processing').length,
+          completed: messageQueue.filter(m => m.status === 'completed').length,
+          error: messageQueue.filter(m => m.status === 'error').length
+        },
+        processing: sessionContext === 'legacy' ? processingStatus : {
+          isProcessing: !!targetSession.currentlyProcessing,
+          currentMessage: targetSession.currentlyProcessing?.id || null
+        }
+      }
+    });
+    
+    res.json({
+      success: true,
+      message: 'Message updated in queue',
+      updatedMessage,
+      sessionId: sessionContext
+    });
+  } catch (error) {
+    console.error('❌ Failed to update message in queue:', error);
+    res.status(500).json({
+      error: `Failed to update message in queue: ${error.message}`,
+      messageId: req.params.id,
+      sessionId: req.query.sessionId || 'legacy'
     });
   }
-
-  const updatedMessage = claudeSession.updateMessageInQueue(id, message.trim());
-  
-  if (!updatedMessage) {
-    return res.status(404).json({
-      error: 'Message not found'
-    });
-  }
-
-  const messageQueue = claudeSession.getMessageQueue();
-  
-  // Broadcast queue update
-  broadcastToClients({
-    type: 'queue-update',
-    data: {
-      messages: messageQueue,
-      total: messageQueue.length
-    }
-  });
-
-  // Broadcast status update
-  broadcastToClients({
-    type: 'status-update',
-    data: {
-      status: 'ready',
-      queue: {
-        total: messageQueue.length,
-        pending: messageQueue.filter(m => m.status === 'pending').length,
-        processing: messageQueue.filter(m => m.status === 'processing').length,
-        completed: messageQueue.filter(m => m.status === 'completed').length,
-        error: messageQueue.filter(m => m.status === 'error').length
-      },
-      processing: processingStatus
-    }
-  });
-  
-  res.json({
-    success: true,
-    message: 'Message updated in queue',
-    updatedMessage
-  });
 });
 
-// Delete message from queue
+// Delete message from queue (Task 2.3: Session-Aware Message Routing)
 router.delete('/queue/:id', (req, res) => {
-  const { id } = req.params;
-  
-  const deletedMessage = claudeSession.removeMessageFromQueue(id);
-  
-  if (!deletedMessage) {
-    return res.status(404).json({
-      error: 'Message not found'
+  try {
+    const { id } = req.params;
+    const { sessionId } = req.query;
+    
+    let targetSession;
+    let sessionContext = 'legacy';
+    
+    // Route to specific session if sessionId provided
+    if (sessionId) {
+      targetSession = sessionOrchestrator.getSession(sessionId);
+      
+      if (!targetSession) {
+        return res.status(404).json({
+          error: `Session ${sessionId} not found`,
+          sessionId
+        });
+      }
+      
+      sessionContext = sessionId;
+    } else {
+      // Legacy behavior: use default single session
+      targetSession = claudeSession;
+    }
+    
+    const deletedMessage = targetSession.removeMessageFromQueue(id);
+    
+    if (!deletedMessage) {
+      return res.status(404).json({
+        error: 'Message not found',
+        messageId: id,
+        sessionId: sessionContext
+      });
+    }
+
+    const messageQueue = targetSession.getMessageQueue();
+    
+    // Broadcast queue update with session context
+    broadcastToClients({
+      type: 'queue-update',
+      sessionId: sessionContext,
+      data: {
+        messages: messageQueue,
+        total: messageQueue.length
+      }
+    });
+
+    // Broadcast status update with session context
+    broadcastToClients({
+      type: 'status-update',
+      sessionId: sessionContext,
+      data: {
+        status: 'ready',
+        queue: {
+          total: messageQueue.length,
+          pending: messageQueue.filter(m => m.status === 'pending').length,
+          processing: messageQueue.filter(m => m.status === 'processing').length,
+          completed: messageQueue.filter(m => m.status === 'completed').length,
+          error: messageQueue.filter(m => m.status === 'error').length
+        },
+        processing: sessionContext === 'legacy' ? processingStatus : {
+          isProcessing: !!targetSession.currentlyProcessing,
+          currentMessage: targetSession.currentlyProcessing?.id || null
+        }
+      }
+    });
+    
+    res.json({
+      success: true,
+      message: 'Message deleted from queue',
+      deletedMessage,
+      sessionId: sessionContext
+    });
+  } catch (error) {
+    console.error('❌ Failed to delete message from queue:', error);
+    res.status(500).json({
+      error: `Failed to delete message from queue: ${error.message}`,
+      messageId: req.params.id,
+      sessionId: req.query.sessionId || 'legacy'
     });
   }
-
-  const messageQueue = claudeSession.getMessageQueue();
-  
-  // Broadcast queue update
-  broadcastToClients({
-    type: 'queue-update',
-    data: {
-      messages: messageQueue,
-      total: messageQueue.length
-    }
-  });
-
-  // Broadcast status update
-  broadcastToClients({
-    type: 'status-update',
-    data: {
-      status: 'ready',
-      queue: {
-        total: messageQueue.length,
-        pending: messageQueue.filter(m => m.status === 'pending').length,
-        processing: messageQueue.filter(m => m.status === 'processing').length,
-        completed: messageQueue.filter(m => m.status === 'completed').length,
-        error: messageQueue.filter(m => m.status === 'error').length
-      },
-      processing: processingStatus
-    }
-  });
-  
-  res.json({
-    success: true,
-    message: 'Message deleted from queue',
-    deletedMessage
-  });
 });
 
-// Clear queue
+// Clear queue (Task 2.3: Session-Aware Message Routing)
 router.delete('/queue', (req, res) => {
-  const messageQueue = claudeSession.getMessageQueue();
-  const clearedCount = messageQueue.length;
-  
-  // Clear session manager's queue
-  claudeSession.clearMessageQueue();
-  
-  // Also clear Claude output buffer
-  claudeOutputBuffer = '';
-  claudeCurrentScreen = '';
-  lastClaudeOutputTime = 0;
-  
-  const emptyQueue = claudeSession.getMessageQueue();
-  
-  // Broadcast queue update
-  broadcastToClients({
-    type: 'queue-update',
-    data: {
-      messages: emptyQueue,
-      total: emptyQueue.length
+  try {
+    const { sessionId } = req.query;
+    
+    let targetSession;
+    let sessionContext = 'legacy';
+    
+    // Route to specific session if sessionId provided
+    if (sessionId) {
+      targetSession = sessionOrchestrator.getSession(sessionId);
+      
+      if (!targetSession) {
+        return res.status(404).json({
+          error: `Session ${sessionId} not found`,
+          sessionId
+        });
+      }
+      
+      sessionContext = sessionId;
+    } else {
+      // Legacy behavior: use default single session
+      targetSession = claudeSession;
     }
-  });
+    
+    const messageQueue = targetSession.getMessageQueue();
+    const clearedCount = messageQueue.length;
+    
+    // Clear target session's queue
+    targetSession.clearMessageQueue();
+    
+    // For legacy session only: also clear global Claude output buffer
+    if (sessionContext === 'legacy') {
+      claudeOutputBuffer = '';
+      claudeCurrentScreen = '';
+      lastClaudeOutputTime = 0;
+    }
+    
+    const emptyQueue = targetSession.getMessageQueue();
+    
+    // Broadcast queue update with session context
+    broadcastToClients({
+      type: 'queue-update',
+      sessionId: sessionContext,
+      data: {
+        messages: emptyQueue,
+        total: emptyQueue.length
+      }
+    });
 
-  // Broadcast status update
-  broadcastToClients({
-    type: 'status-update',
-    data: {
-      status: 'ready',
-      queue: {
-        total: emptyQueue.length,
-        pending: 0,
-        processing: 0,
-        completed: 0,
-        error: 0
-      },
-      processing: processingStatus
-    }
-  });
+    // Broadcast status update with session context
+    broadcastToClients({
+      type: 'status-update',
+      sessionId: sessionContext,
+      data: {
+        status: 'ready',
+        queue: {
+          total: emptyQueue.length,
+          pending: 0,
+          processing: 0,
+          completed: 0,
+          error: 0
+        },
+        processing: sessionContext === 'legacy' ? processingStatus : {
+          isProcessing: false,
+          currentMessage: null
+        }
+      }
+    });
 
-  // Broadcast output cleared
-  broadcastToClients({
-    type: 'claude-output',
-    data: { 
-      output: '',
-      fullBuffer: '',
-      timestamp: new Date().toISOString(),
-      cleared: true
-    }
-  });
-  
-  res.json({
-    success: true,
-    message: `Cleared ${clearedCount} messages from queue and output buffer`
-  });
+    // Broadcast output cleared with session context
+    broadcastToClients({
+      type: 'claude-output',
+      sessionId: sessionContext,
+      data: { 
+        output: '',
+        fullBuffer: '',
+        timestamp: new Date().toISOString(),
+        cleared: true
+      }
+    });
+    
+    res.json({
+      success: true,
+      message: `Cleared ${clearedCount} messages from queue${sessionContext === 'legacy' ? ' and output buffer' : ''}`,
+      sessionId: sessionContext,
+      clearedCount
+    });
+  } catch (error) {
+    console.error('❌ Failed to clear queue:', error);
+    res.status(500).json({
+      error: `Failed to clear queue: ${error.message}`,
+      sessionId: req.query.sessionId || 'legacy'
+    });
+  }
 });
 
 // Start Claude session only (Claude-Autopilot style)

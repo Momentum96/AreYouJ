@@ -19,7 +19,29 @@ def get_claude_command():
         # that are not available on Windows (pty, select, fcntl modules)
         return ['wsl', 'claude']
     else:
-        # For non-Windows platforms, use direct command
+        # Check for Claude CLI in common locations
+        claude_paths = [
+            'claude',  # Try system PATH first
+            '/Users/jgw/.claude/local/claude',  # User-specific Claude installation
+            '/usr/local/bin/claude',  # Common system location
+            '/opt/homebrew/bin/claude'  # Homebrew on Apple Silicon
+        ]
+        
+        for claude_path in claude_paths:
+            if claude_path == 'claude':
+                # For system PATH, use which command to check availability
+                try:
+                    result = subprocess.run(['which', 'claude'], capture_output=True, text=True)
+                    if result.returncode == 0 and result.stdout.strip():
+                        return ['claude']
+                except:
+                    continue
+            else:
+                # For absolute paths, check if file exists and is executable
+                if os.path.exists(claude_path) and os.access(claude_path, os.X_OK):
+                    return [claude_path]
+        
+        # Fallback to 'claude' if nothing found
         return ['claude']
 
 def main():

@@ -18,7 +18,7 @@ const QUEUES_DIR = path.join(QUEUE_DATA_DIR, 'queues');
 const SETTINGS_FILE_PATH = path.join(QUEUE_DATA_DIR, 'settings.json');
 
 export class ClaudeSessionManager extends EventEmitter {
-  constructor() {
+  constructor(options = {}) {
     super();
     this.pythonProcess = null;
     this.sessionReady = false;
@@ -31,6 +31,13 @@ export class ClaudeSessionManager extends EventEmitter {
     this.forceKillTimer = null;
     this.lastStopTime = 0;
     this.currentWorkingDirectory = null; // Current working directory for queue management
+    
+    // Configuration options
+    const config = {
+      skipInitialQueueLoad: false, // For SessionOrchestrator to create clean instances
+      skipWorkingDirectoryLoad: false, // Skip loading previous working directory
+      ...options
+    };
     
     // Debug logging
     this.debugLogFile = path.join(__dirname, '../logs/claude-debug.log');
@@ -62,8 +69,18 @@ export class ClaudeSessionManager extends EventEmitter {
     
     // Queue persistence setup
     this.ensureQueueDataDirectory();
-    this.loadCurrentWorkingDirectory();
-    this.loadQueueFromFile();
+    
+    // Only load previous state if not creating a clean instance
+    if (!config.skipWorkingDirectoryLoad) {
+      this.loadCurrentWorkingDirectory();
+    } else {
+      // Start with current working directory as default
+      this.currentWorkingDirectory = process.cwd();
+    }
+    
+    if (!config.skipInitialQueueLoad) {
+      this.loadQueueFromFile();
+    }
     
     // Bind methods for proper 'this' context
     this.handleProcessData = this.handleProcessData.bind(this);
@@ -505,11 +522,10 @@ export class ClaudeSessionManager extends EventEmitter {
       this.pythonProcess.on('exit', this.handleProcessExit);
 
       // Wait for Claude to be ready using PromptDetector
-      const ready = await this.promptDetector.waitForPrompt({
-        timeout: 60000,
-        debounceMs: 500,
-        source: 'session-startup'
-      });
+      const ready = await this.promptDetector.waitForReady(
+        this.pythonProcess.stdout,
+        () => this.currentScreen
+      );
       
       if (ready.success) {
         this.sessionReady = true;
@@ -833,266 +849,6 @@ export class ClaudeSessionManager extends EventEmitter {
     }
   }
 
-  waitForPrompt() {
-    return new Promise((resolve, reject) => {
-      if (!this.pythonProcess || !this.pythonProcess.stdout) {
-        this.log('❌ Claude process not available for prompt waiting');
-        reject(new Error('Claude process not available'));
-        return;
-      }
-
-    const DEBOUNCE_THRESHOLD_MS = 2000;
-    const TIMEOUT_MS = 3600000; // 1 hour timeout as safety net (Claude-Autopilot style)
-    let waitingForPermission = false;
-    let screenAnalysisTimer = null;
-    let timeoutTimer = null;
-    let lastOutputTime = Date.now();
-
-    const readyPatterns = [
-      // Primary indicators (most reliable - Claude-Autopilot style)
-      /\? for shortcuts/i,
-      /\\u001b\[2m\\u001b\[38;5;244m│\\u001b\[39m\\u001b\[22m\s>/,
-      
-      // Secondary indicators (common prompt patterns)
-      />\s*$/,
-      /\$\s*$/,
-      
-      // Claude-specific indicators
-      /Bypassing Permissions/i,
-      /Welcome to Claude Code/i,
-      
-      // Terminal prompt indicators
-      /\u276F/,  // Unicode prompt character
-      /❯/,      // Alternative prompt character
-      
-      // Enhanced context indicators
-      /pwd:/i,
-      /cwd:/i,
-      /claude.*ready/i,
-      /claude.*>.*$/im,
-      
-      // ANSI escape sequence patterns for prompts
-      /\u001b\[.*?m\s*>\s*\u001b\[.*?m/,
-      /\u001b\[\d+;\d+m.*>\s*$/,
-      
-      // Multi-line prompt detection
-      /^.*\n.*>\s*$/m,
-      /^.*│.*>\s*$/m,
-      
-      // Fallback patterns for edge cases
-      /Ready for input/i,
-      /Press.*key/i,
-      /Continue.*press/i
-    ];
-
-    // Enhanced permission prompt detection (Claude-Autopilot style)
-    const permissionPrompts = [
-      // Direct permission requests
-      'Do you want to make this edit to',
-      'Do you want to create', 
-      'Do you want to delete',
-      'Do you want to read',
-      'Would you like to',
-      'Proceed with',
-      'Continue?',
-      
-      // Additional permission patterns from Claude-Autopilot
-      'Press Enter to continue',
-      'Press any key to continue',
-      'Confirm this action',
-      'Are you sure',
-      'Type y to confirm',
-      'Type yes to proceed',
-      
-      // Claude Code specific patterns
-      'Allow Claude Code to',
-      'Grant permission to',
-      'Approve this',
-      'Review and confirm'
-    ];
-
-    const cleanup = () => {
-      if (screenAnalysisTimer) {
-        clearTimeout(screenAnalysisTimer);
-        screenAnalysisTimer = null;
-      }
-      if (timeoutTimer) {
-        clearTimeout(timeoutTimer);
-        timeoutTimer = null;
-      }
-    };
-
-    const analyzeCurrentScreen = () => {
-      const timeSinceLastOutput = Date.now() - lastOutputTime;
-      const screenBuffer = this.currentScreenBuffer || '';
-      
-      this.debugLog(`🔍 Analyzing screen (${screenBuffer.length} chars, ${timeSinceLastOutput}ms since last output)`);
-      
-      // Enhanced permission prompt detection with context analysis (moved up for scope)
-      const detectedPrompts = permissionPrompts.filter(prompt => 
-        screenBuffer.toLowerCase().includes(prompt.toLowerCase())
-      );
-      
-      const hasPermissionPrompt = detectedPrompts.length > 0;
-      const hasMultiplePrompts = detectedPrompts.length > 1;
-      
-      // Additional context clues for permission prompts
-      const hasPermissionContext = screenBuffer.includes('[Y/n]') || 
-                                  screenBuffer.includes('[y/N]') ||
-                                  screenBuffer.includes('(y/n)') ||
-                                  screenBuffer.includes('Enter/Space/Escape') ||
-                                  /\[(yes|no|y|n|enter|space|esc)\]/i.test(screenBuffer);
-      
-      if (waitingForPermission) {
-        // Enhanced permission resolution detection
-        const permissionResolved = screenBuffer.includes('? for shortcuts') ||
-                                  /operation.*complete/i.test(screenBuffer) ||
-                                  /task.*finished/i.test(screenBuffer) ||
-                                  /changes.*applied/i.test(screenBuffer) ||
-                                  /successfully/i.test(screenBuffer) ||
-                                  // Check if we're back to a normal prompt state
-                                  readyPatterns.some(pattern => pattern.test(screenBuffer));
-        
-        if (permissionResolved) {
-          this.log(`✅ Permission resolved - back to normal processing (detected completion indicators)`);
-          waitingForPermission = false;
-        } else {
-          // Check if permission prompt is still active
-          const stillWaitingForInput = detectedPrompts.length > 0 || hasPermissionContext ||
-                                     screenBuffer.includes('waiting') ||
-                                     screenBuffer.includes('pending');
-          
-          this.debugLog(`🔐 Still waiting for permission response (active prompts: ${stillWaitingForInput})`);
-          screenAnalysisTimer = setTimeout(analyzeCurrentScreen, 500);
-          return;
-        }
-      }
-      
-      if ((hasPermissionPrompt || hasPermissionContext) && !waitingForPermission) {
-        const promptDetails = detectedPrompts.length > 0 ? detectedPrompts.join(', ') : 'context indicators';
-        this.log(`🔐 Permission prompt detected: ${promptDetails} (multiple: ${hasMultiplePrompts}, context: ${hasPermissionContext})`);
-        waitingForPermission = true;
-        screenAnalysisTimer = setTimeout(analyzeCurrentScreen, 500);
-        return;
-      }
-      
-      // Enhanced pattern matching with priority system (Claude-Autopilot style)
-      let matchedPattern = null;
-      let matchPriority = 0;
-      
-      for (let i = 0; i < readyPatterns.length; i++) {
-        const pattern = readyPatterns[i];
-        const jsonScreen = JSON.stringify(screenBuffer);
-        const directMatch = pattern.test(screenBuffer);
-        const jsonMatch = pattern.test(jsonScreen);
-        
-        if (directMatch || jsonMatch) {
-          // Primary patterns (index 0-1) have highest priority
-          const priority = i < 2 ? 3 : (i < 4 ? 2 : 1);
-          
-          if (priority > matchPriority) {
-            matchedPattern = pattern;
-            matchPriority = priority;
-          }
-          
-          this.debugLog(`🎯 Pattern matched: ${pattern.source} (direct: ${directMatch}, json: ${jsonMatch}, priority: ${priority})`);
-        }
-      }
-      
-      const isReady = matchedPattern !== null;
-      
-      if (isReady && timeSinceLastOutput >= DEBOUNCE_THRESHOLD_MS) {
-        this.log(`✅ Claude is ready! Pattern: ${matchedPattern.source} (priority: ${matchPriority}, stable for: ${timeSinceLastOutput}ms)`);
-        safeResolve();
-      } else if (isReady) {
-        this.debugLog(`⏳ Ready pattern detected but waiting for stability (${timeSinceLastOutput}ms < ${DEBOUNCE_THRESHOLD_MS}ms, pattern: ${matchedPattern.source})`);
-        screenAnalysisTimer = setTimeout(analyzeCurrentScreen, 500);
-      } else {
-        // Enhanced alternative detection with multiple criteria (Claude-Autopilot style)
-        const hasSubstantialContent = screenBuffer.length > 100;
-        const hasStabilized = timeSinceLastOutput >= 4000;
-        const looksLikePrompt = screenBuffer.trim().endsWith('>') || screenBuffer.trim().endsWith('$');
-        
-        if (hasSubstantialContent && hasStabilized && looksLikePrompt) {
-          this.log(`✅ Claude is ready (detected by output stabilization + prompt indicators)`);
-          safeResolve();
-          return;
-        } else if (hasSubstantialContent && timeSinceLastOutput >= 8000) {
-          // Extra long stabilization as fallback
-          this.log(`✅ Claude is ready (detected by long stabilization period)`);
-          safeResolve();
-          return;
-        }
-        
-        this.debugLog(`⏱️ No ready pattern detected, continuing analysis (content: ${hasSubstantialContent}, stable: ${hasStabilized}, prompt-like: ${looksLikePrompt})`);
-        screenAnalysisTimer = setTimeout(analyzeCurrentScreen, 500);
-      }
-    };
-
-    // Track output updates for timing
-    const outputTracker = (data) => {
-      lastOutputTime = Date.now();
-    };
-    
-    // Add temporary listener for output timing
-    this.on('claude-output', outputTracker);
-    
-    // Safe cleanup function to prevent memory leaks
-    const safeCleanup = () => {
-      cleanup();
-      if (this.listenerCount('claude-output') > 0) {
-        this.off('claude-output', outputTracker);
-      }
-    };
-    
-    // Safe resolve/reject functions
-    const safeResolve = () => {
-      safeCleanup();
-      resolve();
-    };
-    
-    const safeReject = (error) => {
-      safeCleanup();
-      reject(error);
-    };
-
-    // Set up timeout with session health check
-    let extendedTimeoutUsed = false;
-    
-    timeoutTimer = setTimeout(() => {
-      this.log(`⏱️ Safety timeout check after ${TIMEOUT_MS / 60000} minutes - checking session health`);
-      
-      // Check if Claude session is still alive
-      if (!this.pythonProcess || this.pythonProcess.killed || this.pythonProcess.exitCode !== null) {
-        this.log(`❌ Claude process died during long operation`);
-        safeReject(new Error('Claude process died during operation'));
-        return;
-      }
-      
-      // Check if we're still receiving output (task might still be running)
-      const timeSinceLastOutput = Date.now() - lastOutputTime;
-      if (timeSinceLastOutput < 300000) { // If output within last 5 minutes (more generous)
-        this.log(`⏳ Still receiving output (${Math.round(timeSinceLastOutput/1000)}s ago), extending timeout (Claude-Autopilot style)`);
-        
-        // Clear current timer and set new one to prevent race condition
-        if (timeoutTimer) {
-          clearTimeout(timeoutTimer);
-          timeoutTimer = null;
-        }
-        timeoutTimer = setTimeout(() => {
-          this.log(`❌ Safety timeout after extended period (1 hour total)`);
-          safeReject(new Error('Safety timeout - Claude may be stuck or task is extremely long-running'));
-        }, 1800000); // Additional 30 minutes (total becomes 1.5 hours)
-      } else {
-        this.log(`❌ No recent output for ${Math.round(timeSinceLastOutput/1000)}s, timing out`);
-        safeReject(new Error('Timeout - no output from Claude for extended period'));
-      }
-    }, TIMEOUT_MS);
-
-    // Start screen analysis
-    screenAnalysisTimer = setTimeout(analyzeCurrentScreen, 500);
-    }); // Close Promise
-  }
 
   // Removed addToQueue - Claude-Autopilot style sends messages directly
 
@@ -1298,7 +1054,10 @@ export class ClaudeSessionManager extends EventEmitter {
       await this.sendMessageToClaudeProcess(message);
       
       this.log('⏰ Waiting for Claude to process message and show prompt...');
-      await this.waitForPrompt();
+      await this.promptDetector.waitForReady(
+        this.pythonProcess.stdout,
+        () => this.currentScreen
+      );
       
       const processingTime = Date.now() - new Date(message.processingStartedAt).getTime();
       this.log(`✅ Message ${message.id} completed in ${(processingTime / 1000).toFixed(1)}s`);

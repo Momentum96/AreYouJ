@@ -67,8 +67,12 @@ export class SessionOrchestrator extends EventEmitter {
       this.creationInProgress.add(sessionId);
       this.log(`Creating new session ${sessionId} for directory: ${workingDirectory}`);
       
-      // Create new ClaudeSessionManager instance
-      const sessionManager = new ClaudeSessionManager();
+      // Create new ClaudeSessionManager instance with clean state
+      // Skip initial queue loading to prevent contamination from legacy sessions
+      const sessionManager = new ClaudeSessionManager({
+        skipInitialQueueLoad: true,
+        skipWorkingDirectoryLoad: true
+      });
       
       // Configure session for the specified working directory
       sessionManager.setWorkingDirectory(workingDirectory);
@@ -96,6 +100,11 @@ export class SessionOrchestrator extends EventEmitter {
 
       // Save session to database
       try {
+        // Initialize database if not already done
+        if (!sqliteManager.getDB()) {
+          await sqliteManager.initDB(sessionMetadata.workingDirectory);
+        }
+        
         await sqliteManager.createSession({
           id: sessionId,
           workingDirectory: sessionMetadata.workingDirectory,
@@ -146,6 +155,9 @@ export class SessionOrchestrator extends EventEmitter {
       
       this.log(`✅ Session ${sessionId} created and started successfully`);
       this.emit('session-created', { sessionId, metadata: sessionMetadata });
+      
+      // Trigger session list update for real-time UI updates
+      this.emitSessionListUpdate();
       
       return sessionId;
       
@@ -205,6 +217,9 @@ export class SessionOrchestrator extends EventEmitter {
       
       this.log(`✅ Session ${sessionId} terminated successfully`);
       this.emit('session-terminated', { sessionId, metadata });
+      
+      // Trigger session list update for real-time UI updates
+      this.emitSessionListUpdate();
       
       return true;
       
@@ -296,23 +311,68 @@ export class SessionOrchestrator extends EventEmitter {
   setupSessionEventForwarding(sessionManager, sessionId, metadata) {
     // Forward session events with session context
     sessionManager.on('session-started', () => {
+      const oldStatus = metadata.status;
       metadata.lastActivity = new Date().toISOString();
+      metadata.status = 'active';
+      
+      // Emit session status change event
+      this.emit('session-status-changed', { 
+        sessionId, 
+        oldStatus, 
+        newStatus: 'active',
+        metadata: { ...metadata },
+        timestamp: metadata.lastActivity 
+      });
+      
       this.emit('session-event', { sessionId, event: 'session-started', timestamp: metadata.lastActivity });
+      
+      // Trigger session list update
+      this.emitSessionListUpdate();
     });
     
     sessionManager.on('session-ended', (data) => {
+      const oldStatus = metadata.status;
       metadata.status = 'ended';
       metadata.endedAt = new Date().toISOString();
+      
+      // Emit session status change event
+      this.emit('session-status-changed', { 
+        sessionId, 
+        oldStatus, 
+        newStatus: 'ended',
+        metadata: { ...metadata },
+        timestamp: metadata.endedAt 
+      });
+      
       this.emit('session-event', { sessionId, event: 'session-ended', data, timestamp: metadata.endedAt });
+      
+      // Trigger session list update
+      this.emitSessionListUpdate();
     });
     
     sessionManager.on('message-started', (message) => {
+      const oldStatus = metadata.status;
       metadata.lastActivity = new Date().toISOString();
       metadata.messageCount++;
+      metadata.status = 'busy';
+      
+      // Emit session status change event (idle/active -> busy)
+      if (oldStatus !== 'busy') {
+        this.emit('session-status-changed', { 
+          sessionId, 
+          oldStatus, 
+          newStatus: 'busy',
+          currentTask: message.message || 'Processing message...',
+          metadata: { ...metadata },
+          timestamp: metadata.lastActivity 
+        });
+      }
+      
       this.emit('session-event', { sessionId, event: 'message-started', message, timestamp: metadata.lastActivity });
     });
     
     sessionManager.on('message-completed', (message) => {
+      const oldStatus = metadata.status;
       metadata.lastActivity = new Date().toISOString();
       
       // Track processing time
@@ -333,6 +393,21 @@ export class SessionOrchestrator extends EventEmitter {
         status: message.status,
         messageId: message.id
       });
+      
+      // Change status from busy to idle after message completion
+      metadata.status = 'idle';
+      
+      // Emit session status change event (busy -> idle)
+      if (oldStatus !== 'idle') {
+        this.emit('session-status-changed', { 
+          sessionId, 
+          oldStatus, 
+          newStatus: 'idle',
+          currentTask: null,
+          metadata: { ...metadata },
+          timestamp: metadata.lastActivity 
+        });
+      }
       
       this.emit('session-event', { sessionId, event: 'message-completed', message, timestamp: metadata.lastActivity });
     });
@@ -380,6 +455,50 @@ export class SessionOrchestrator extends EventEmitter {
     
     // Remove from memory
     this.sessionMetrics.delete(sessionId);
+  }
+
+  /**
+   * Emit session-list-update event with current session statistics
+   * This is used by WebSocket clients to update their session lists in real-time
+   * @private
+   */
+  emitSessionListUpdate() {
+    const allSessions = this.getAllActiveSessions();
+    const stats = this.getOrchestratorStats();
+    
+    // Calculate status distribution
+    const statusDistribution = {
+      active: 0,
+      idle: 0,
+      busy: 0,
+      unhealthy: 0,
+      restored: 0,
+      terminated: 0,
+      initializing: 0
+    };
+    
+    allSessions.forEach(session => {
+      if (statusDistribution.hasOwnProperty(session.status)) {
+        statusDistribution[session.status]++;
+      }
+    });
+    
+    const sessionListData = {
+      sessions: allSessions,
+      statistics: {
+        total: stats.activeSessions,
+        ...statusDistribution,
+        totalMessages: stats.totalMessages,
+        totalProcessingTime: stats.totalProcessingTime,
+        averageProcessingTime: stats.averageProcessingTime
+      },
+      timestamp: new Date().toISOString()
+    };
+    
+    // Emit session-list-update event for WebSocket broadcasting
+    this.emit('session-list-update', sessionListData);
+    
+    this.log(`📡 Session list update emitted: ${allSessions.length} sessions`);
   }
 
   /**

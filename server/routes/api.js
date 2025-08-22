@@ -4,6 +4,7 @@ import path from 'path';
 import os from 'os';
 import { broadcastToClients } from '../websocket/index.js';
 import { getClaudeSession } from '../claude/session-manager.js';
+import { getSessionOrchestrator } from '../orchestration/session-orchestrator.js';
 import sqliteManager from '../db/sqlite.js';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
@@ -86,6 +87,38 @@ export function getCurrentClaudeOutput() {
 
 // Get Claude session instance
 const claudeSession = getClaudeSession();
+
+// Get SessionOrchestrator instance for multi-session management
+const sessionOrchestrator = getSessionOrchestrator();
+
+// Setup SessionOrchestrator event forwarding to WebSocket clients
+sessionOrchestrator.on('session-created', (data) => {
+  broadcastToClients({
+    type: 'orchestrator-session-created',
+    data
+  });
+});
+
+sessionOrchestrator.on('session-terminated', (data) => {
+  broadcastToClients({
+    type: 'orchestrator-session-terminated',
+    data
+  });
+});
+
+sessionOrchestrator.on('session-event', (data) => {
+  broadcastToClients({
+    type: 'orchestrator-session-event',
+    data
+  });
+});
+
+sessionOrchestrator.on('session-output', (data) => {
+  broadcastToClients({
+    type: 'orchestrator-session-output',
+    data
+  });
+});
 
 // Set up Claude session event handlers
 // Removed duplicate session-started handler - WebSocket module handles this
@@ -335,6 +368,208 @@ claudeSession.on('claude-output', (output) => {
 });
 
 // Removed duplicate error handler - WebSocket module handles this
+
+// ===== Session Management API Endpoints (Task 2.1) =====
+
+// GET /api/sessions - List all active sessions with orchestrator statistics
+router.get('/sessions', async (req, res) => {
+  try {
+    const activeSessions = sessionOrchestrator.getAllActiveSessions();
+    const stats = sessionOrchestrator.getOrchestratorStats();
+    
+    res.json({
+      success: true,
+      sessions: activeSessions,
+      statistics: {
+        total: activeSessions.length,
+        active: stats.activeSessions,
+        healthy: stats.healthySessions,
+        totalMessages: stats.totalMessages,
+        averageProcessingTime: stats.averageProcessingTime
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Failed to get active sessions:', error);
+    res.status(500).json({
+      success: false,
+      error: `Failed to get active sessions: ${error.message}`,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// POST /api/sessions - Create a new session in specified directory
+router.post('/sessions', async (req, res) => {
+  try {
+    const { workingDirectory, config = {} } = req.body;
+    
+    // Input validation
+    if (!workingDirectory) {
+      return res.status(400).json({
+        success: false,
+        error: 'workingDirectory is required'
+      });
+    }
+    
+    if (typeof workingDirectory !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'workingDirectory must be a string'
+      });
+    }
+    
+    // Validate directory exists
+    if (!fs.existsSync(workingDirectory)) {
+      return res.status(400).json({
+        success: false,
+        error: 'The specified directory does not exist'
+      });
+    }
+    
+    // Check if path is a directory
+    const stats = fs.statSync(workingDirectory);
+    if (!stats.isDirectory()) {
+      return res.status(400).json({
+        success: false,
+        error: 'The specified path is not a directory'
+      });
+    }
+    
+    // Create session via SessionOrchestrator
+    const sessionId = await sessionOrchestrator.createSession(workingDirectory, config);
+    const sessionDetails = sessionOrchestrator.getSessionDetails(sessionId);
+    
+    // Broadcast session creation event (already handled by orchestrator events, but including for consistency)
+    console.log(`✅ Session ${sessionId} created successfully in directory: ${workingDirectory}`);
+    
+    res.status(201).json({
+      success: true,
+      sessionId,
+      session: sessionDetails,
+      message: 'Session created successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Failed to create session:', error);
+    res.status(500).json({
+      success: false,
+      error: `Failed to create session: ${error.message}`,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// DELETE /api/sessions/:sessionId - Terminate a specific session
+router.delete('/sessions/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    
+    // Input validation
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        error: 'sessionId is required'
+      });
+    }
+    
+    // Get session details before termination
+    const sessionDetails = sessionOrchestrator.getSessionDetails(sessionId);
+    if (!sessionDetails) {
+      return res.status(404).json({
+        success: false,
+        error: 'Session not found'
+      });
+    }
+    
+    // Terminate session via SessionOrchestrator
+    const terminated = await sessionOrchestrator.terminateSession(sessionId);
+    
+    if (terminated) {
+      console.log(`✅ Session ${sessionId} terminated successfully`);
+      res.json({
+        success: true,
+        message: 'Session terminated successfully',
+        sessionId,
+        terminatedSession: {
+          id: sessionDetails.id,
+          workingDirectory: sessionDetails.metadata.workingDirectory,
+          wasActive: sessionDetails.metadata.status === 'active'
+        },
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to terminate session',
+        sessionId,
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error('❌ Failed to terminate session:', error);
+    res.status(500).json({
+      success: false,
+      error: `Failed to terminate session: ${error.message}`,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// GET /api/sessions/:sessionId/status - Get detailed information about a specific session
+router.get('/sessions/:sessionId/status', (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    
+    // Input validation
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        error: 'sessionId is required'
+      });
+    }
+    
+    // Get session details from SessionOrchestrator
+    const sessionDetails = sessionOrchestrator.getSessionDetails(sessionId);
+    
+    if (!sessionDetails) {
+      return res.status(404).json({
+        success: false,
+        error: 'Session not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      sessionId,
+      status: sessionDetails.metadata.status,
+      details: {
+        metadata: sessionDetails.metadata,
+        sessionStatus: sessionDetails.sessionStatus,
+        messageQueue: {
+          messages: sessionDetails.messageQueue || [],
+          total: sessionDetails.messageQueue?.length || 0,
+          pending: sessionDetails.messageQueue?.filter(m => m.status === 'pending').length || 0,
+          processing: sessionDetails.messageQueue?.filter(m => m.status === 'processing').length || 0,
+          completed: sessionDetails.messageQueue?.filter(m => m.status === 'completed').length || 0,
+          error: sessionDetails.messageQueue?.filter(m => m.status === 'error').length || 0
+        },
+        performance: sessionDetails.performance,
+        metrics: sessionDetails.metrics || []
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Failed to get session status:', error);
+    res.status(500).json({
+      success: false,
+      error: `Failed to get session status: ${error.message}`,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// ===== End Session Management API Endpoints =====
 
 // Get system status  
 router.get('/status', (req, res) => {

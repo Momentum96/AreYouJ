@@ -4,6 +4,10 @@ import { fileURLToPath } from 'url';
 import EventEmitter from 'events';
 import fs from 'fs';
 import crypto from 'crypto';
+import { ClaudePromptDetector } from '../utils/claude-prompt-detector.js';
+import { OutputThrottler } from '../utils/output-throttler.js';
+import { ProcessManager } from '../utils/process-manager.js';
+import { QueuePersistenceManager } from '../utils/queue-persistence.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,23 +28,37 @@ export class ClaudeSessionManager extends EventEmitter {
     this.currentlyProcessing = null;
     this.lastActivity = Date.now();
     this.healthCheckInterval = null;
-    this.currentScreenBuffer = '';
     this.forceKillTimer = null;
     this.lastStopTime = 0;
     this.currentWorkingDirectory = null; // Current working directory for queue management
     
-    // Output throttling and auto-clear (Claude-Autopilot style)
-    this.outputBuffer = '';
-    this.outputTimer = null;
-    this.autoClearTimer = null;
-    this.lastOutputTime = 0;
-    this.OUTPUT_THROTTLE_MS = 1000; // 1 second throttle
-    this.OUTPUT_AUTO_CLEAR_MS = 30000; // 30 seconds auto-clear
-    this.OUTPUT_MAX_BUFFER_SIZE = 100000; // 100KB max buffer
-    
     // Debug logging
     this.debugLogFile = path.join(__dirname, '../logs/claude-debug.log');
     this.ensureLogDirectory();
+    
+    // Initialize utility managers
+    this.outputThrottler = new OutputThrottler({
+      throttleMs: 1000, // 1 second throttle
+      autoClearMs: 30000, // 30 seconds auto-clear
+      maxBufferSize: 100000 // 100KB max buffer
+    });
+    
+    this.promptDetector = new ClaudePromptDetector({
+      debounceThresholdMs: 2000,
+      timeoutMs: 3600000
+    });
+    
+    this.processManager = new ProcessManager({
+      gracefulTimeoutMs: 2000,
+      maxRetries: 3
+    });
+    
+    this.queuePersistence = new QueuePersistenceManager({
+      baseDataDir: QUEUE_DATA_DIR
+    });
+    
+    // Setup utility event forwarding
+    this.setupUtilityEventForwarding();
     
     // Queue persistence setup
     this.ensureQueueDataDirectory();
@@ -52,16 +70,51 @@ export class ClaudeSessionManager extends EventEmitter {
     this.handleProcessError = this.handleProcessError.bind(this);
     this.handleProcessExit = this.handleProcessExit.bind(this);
   }
+  
+  /**
+   * Setup event forwarding from utility managers
+   * @private
+   */
+  setupUtilityEventForwarding() {
+    // Forward OutputThrottler events
+    this.outputThrottler.on('output', (output) => {
+      this.emit('claude-output', output);
+    });
+    
+    this.outputThrottler.on('output-cleared', (data) => {
+      this.log(`🧹 Output cleared: ${data.clearedLength} characters`);
+    });
+    
+    // Forward PromptDetector events
+    this.promptDetector.on('prompt-detected', (data) => {
+      this.log(`🎯 Prompt detected: ${data.type} (confidence: ${data.confidence})`);
+    });
+    
+    this.promptDetector.on('permission-prompt-detected', (data) => {
+      this.log(`🔒 Permission prompt detected: ${data.action}`);
+    });
+    
+    // Forward ProcessManager events
+    this.processManager.on('process-spawned', (data) => {
+      this.log(`🚀 Process spawned: ${data.processId} (PID: ${data.pid})`);
+    });
+    
+    this.processManager.on('process-exited', (data) => {
+      this.log(`⚰️ Process exited: ${data.processId} (code: ${data.exitCode})`);
+    });
+  }
 
   // Message queue management (Claude-Autopilot style)
   addMessageToQueue(messageItem) {
     this.messageQueue.push(messageItem);
     this.log(`📥 Added message to queue: ${messageItem.id}`);
     
-    // Save queue to file
-    this.saveQueueToFile().catch(error => {
-      this.log(`⚠️ Failed to save queue after adding message: ${error.message}`);
-    });
+    // Save queue using QueuePersistenceManager
+    if (this.currentWorkingDirectory) {
+      this.queuePersistence.saveQueue(this.currentWorkingDirectory, this.messageQueue).catch(error => {
+        this.log(`⚠️ Failed to save queue after adding message: ${error.message}`);
+      });
+    }
     
     // Try auto-start processing if session is ready
     if (this.sessionReady && !this.currentlyProcessing) {
@@ -92,10 +145,12 @@ export class ClaudeSessionManager extends EventEmitter {
     this.messageQueue[messageIndex].message = newMessage;
     this.log(`📝 Updated message in queue: ${messageId} (${oldMessage.substring(0, 50)}... → ${newMessage.substring(0, 50)}...)`);
     
-    // Save queue to file
-    this.saveQueueToFile().catch(error => {
-      this.log(`⚠️ Failed to save queue after update: ${error.message}`);
-    });
+    // Save queue using QueuePersistenceManager
+    if (this.currentWorkingDirectory) {
+      this.queuePersistence.saveQueue(this.currentWorkingDirectory, this.messageQueue).catch(error => {
+        this.log(`⚠️ Failed to save queue after update: ${error.message}`);
+      });
+    }
     
     return this.messageQueue[messageIndex];
   }
@@ -246,90 +301,69 @@ export class ClaudeSessionManager extends EventEmitter {
     }
   }
 
-  loadQueueFromFile() {
+  async loadQueueFromFile() {
+    if (!this.currentWorkingDirectory) {
+      this.log('📁 No working directory set, starting with empty queue');
+      this.messageQueue = [];
+      return;
+    }
+
     try {
-      // Try migration first
-      this.migrateOldQueueIfNeeded();
+      // Use QueuePersistenceManager to load queue
+      const savedQueue = await this.queuePersistence.loadQueue(this.currentWorkingDirectory);
       
-      const queueFilePath = this.getQueueFilePath();
-      
-      if (fs.existsSync(queueFilePath)) {
-        const fileContent = fs.readFileSync(queueFilePath, 'utf8');
-        const savedQueue = JSON.parse(fileContent);
+      if (Array.isArray(savedQueue)) {
+        this.messageQueue = savedQueue;
+        this.log(`📁 Loaded ${this.messageQueue.length} messages via QueuePersistenceManager`);
         
-        if (Array.isArray(savedQueue)) {
-          this.messageQueue = savedQueue;
-          this.log(`📁 Loaded ${this.messageQueue.length} messages from queue file: ${queueFilePath}`);
-          
-          // Log queue contents for debugging
-          const pending = this.messageQueue.filter(m => m.status === 'pending').length;
-          const completed = this.messageQueue.filter(m => m.status === 'completed').length;
-          const processing = this.messageQueue.filter(m => m.status === 'processing').length;
-          const error = this.messageQueue.filter(m => m.status === 'error').length;
-          
-          this.log(`📊 Queue stats - Pending: ${pending}, Completed: ${completed}, Processing: ${processing}, Error: ${error}`);
-          
-          // Reset any 'processing' messages to 'pending' on startup (they were interrupted)
-          this.messageQueue.forEach(message => {
-            if (message.status === 'processing') {
-              message.status = 'pending';
-              this.log(`🔄 Reset interrupted message ${message.id} from processing to pending`);
-            }
-          });
-          
-          this.saveQueueToFile().catch(error => {
+        // Log queue contents for debugging
+        const pending = this.messageQueue.filter(m => m.status === 'pending').length;
+        const completed = this.messageQueue.filter(m => m.status === 'completed').length;
+        const processing = this.messageQueue.filter(m => m.status === 'processing').length;
+        const error = this.messageQueue.filter(m => m.status === 'error').length;
+        
+        this.log(`📊 Queue stats - Pending: ${pending}, Completed: ${completed}, Processing: ${processing}, Error: ${error}`);
+        
+        // Reset any 'processing' messages to 'pending' on startup (they were interrupted)
+        let resetCount = 0;
+        this.messageQueue.forEach(message => {
+          if (message.status === 'processing') {
+            message.status = 'pending';
+            resetCount++;
+            this.log(`🔄 Reset interrupted message ${message.id} from processing to pending`);
+          }
+        });
+        
+        if (resetCount > 0) {
+          // Save the reset changes using QueuePersistenceManager
+          this.queuePersistence.saveQueue(this.currentWorkingDirectory, this.messageQueue).catch(error => {
             this.log(`⚠️ Failed to save queue after reset: ${error.message}`);
-          }); // Save the reset changes
-        } else {
-          this.log('❌ Invalid queue file format, starting with empty queue');
-          this.messageQueue = [];
+          });
         }
       } else {
-        this.log(`📁 No existing queue file for directory: ${this.currentWorkingDirectory}, starting with empty queue`);
+        this.log('📁 No valid queue found, starting with empty queue');
         this.messageQueue = [];
       }
     } catch (error) {
-      console.error('Failed to load queue from file:', error);
-      this.log('❌ Failed to load queue from file, starting with empty queue');
+      console.error('Failed to load queue via QueuePersistenceManager:', error);
+      this.log('❌ Failed to load queue, starting with empty queue');
       this.messageQueue = [];
     }
   }
 
   async saveQueueToFile() {
-    const queueFilePath = this.getQueueFilePath();
-    const backupPath = `${queueFilePath}.backup`;
-    
+    if (!this.currentWorkingDirectory) {
+      this.log('📁 No working directory set, cannot save queue');
+      return;
+    }
+
     try {
-      // Create backup file if original exists
-      if (fs.existsSync(queueFilePath)) {
-        await fs.promises.copyFile(queueFilePath, backupPath);
-      }
-      
-      const queueData = JSON.stringify(this.messageQueue, null, 2);
-      await fs.promises.writeFile(queueFilePath, queueData, 'utf8');
-      
-      this.debugLog(`💾 Saved ${this.messageQueue.length} messages to queue file: ${queueFilePath}`);
-      
-      // Remove backup file on successful save
-      if (fs.existsSync(backupPath)) {
-        await fs.promises.unlink(backupPath);
-      }
+      // Use QueuePersistenceManager to save queue
+      await this.queuePersistence.saveQueue(this.currentWorkingDirectory, this.messageQueue);
+      this.debugLog(`💾 Saved ${this.messageQueue.length} messages via QueuePersistenceManager`);
     } catch (error) {
-      console.error('Failed to save queue to file:', error);
-      this.log('❌ Failed to save queue to file');
-      
-      // Attempt to restore from backup
-      if (fs.existsSync(backupPath)) {
-        try {
-          await fs.promises.copyFile(backupPath, queueFilePath);
-          this.log('✅ Restored queue from backup');
-        } catch (restoreError) {
-          this.log('❌ Failed to restore from backup');
-          console.error('Backup restore failed:', restoreError);
-        }
-      }
-      
-      // Re-throw error to notify caller
+      console.error('Failed to save queue via QueuePersistenceManager:', error);
+      this.log('❌ Failed to save queue');
       throw error;
     }
   }
@@ -449,50 +483,35 @@ export class ClaudeSessionManager extends EventEmitter {
       const settings = this.loadSettings();
       const projectHomePath = settings.projectHomePath || process.cwd();
       
-      const wrapperPath = path.join(__dirname, 'claude_pty_wrapper.py');
-      const args = ['python3', wrapperPath];
-      
-      if (skipPermissions) {
-        args.push('--skip-permissions');
-      }
-      
-      // Add working directory argument
-      args.push('--working-dir', projectHomePath);
-
-      this.log(`Executing: ${args.join(' ')}`);
-      this.log(`Working directory: ${projectHomePath}`);
-
-      // Create filtered environment for security
-      const safeEnv = {
-        PATH: process.env.PATH,
-        HOME: process.env.HOME,
-        USER: process.env.USER,
-        PYTHONPATH: process.env.PYTHONPATH,
-        PYTHONUNBUFFERED: '1',
-        // Add any other necessary environment variables
-        LANG: process.env.LANG,
-        LC_ALL: process.env.LC_ALL
-      };
-
-      // Spawn Python process with filtered environment (Claude-Autopilot style)
-      this.pythonProcess = spawn(args[0], args.slice(1), {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: safeEnv,
-        detached: false
+      // Use ProcessManager to spawn Claude process
+      const processId = await this.processManager.spawnClaudeProcess(projectHomePath, {
+        skipPermissions: skipPermissions,
+        additionalArgs: []
       });
-
-      this.log(`Python process spawned with PID: ${this.pythonProcess.pid}`);
+      
+      this.log(`Claude process spawned via ProcessManager: ${processId}`);
+      
+      // Get process info from ProcessManager
+      const processInfo = this.processManager.getProcessStatus(processId);
+      this.pythonProcess = this.processManager.processes.get(processId).process;
+      this.processId = processId;
+      
+      this.log(`Python process spawned with PID: ${processInfo.pid}`);
       this.currentScreenBuffer = '';
 
-      // Set up event handlers
+      // Set up event handlers for legacy compatibility
       this.pythonProcess.stdout.on('data', this.handleProcessData);
       this.pythonProcess.stderr.on('data', this.handleProcessError);
       this.pythonProcess.on('exit', this.handleProcessExit);
 
-      // Wait for Claude to be ready (Claude-Autopilot style prompt detection)
-      const ready = await this.waitForClaudeReady();
+      // Wait for Claude to be ready using PromptDetector
+      const ready = await this.promptDetector.waitForPrompt({
+        timeout: 60000,
+        debounceMs: 500,
+        source: 'session-startup'
+      });
       
-      if (ready) {
+      if (ready.success) {
         this.sessionReady = true;
         this.startHealthCheck();
         this.log('✅ Claude session started successfully');
@@ -505,7 +524,7 @@ export class ClaudeSessionManager extends EventEmitter {
         
         return true;
       } else {
-        this.log('❌ Failed to start Claude session');
+        this.log(`❌ Failed to start Claude session: ${ready.reason}`);
         this.cleanup();
         return false;
       }
@@ -519,81 +538,6 @@ export class ClaudeSessionManager extends EventEmitter {
     }
   }
 
-  async waitForClaudeReady(timeout = 60000) {
-    return new Promise((resolve) => {
-      const startTime = Date.now();
-      let lastOutputTime = Date.now();
-      
-      const readyPatterns = [
-        /\? for shortcuts/i,
-        /Bypassing Permissions/i,
-        /Welcome to Claude Code/i,
-        /claude/i,
-        /pwd:/i,
-        /cwd:/i,
-        /\u276F/,  // Unicode prompt character
-        /❯/,      // Alternative prompt character
-        />\s*$/,
-        /\$\s*$/
-      ];
-      
-      let checkInterval = null;
-      
-      const checkReady = () => {
-        const elapsed = Date.now() - startTime;
-        const timeSinceLastOutput = Date.now() - lastOutputTime;
-        
-        if (elapsed > timeout) {
-          this.log(`❌ Timeout waiting for Claude ready prompt (${timeout}ms)`);
-          if (checkInterval) clearInterval(checkInterval);
-          resolve(false);
-          return;
-        }
-        
-        // Check if we have a ready pattern in current screen buffer
-        const screenBuffer = this.currentScreenBuffer || '';
-        const isReady = readyPatterns.some(pattern => {
-          const jsonScreen = JSON.stringify(screenBuffer);
-          return pattern.test(jsonScreen) || pattern.test(screenBuffer);
-        });
-        
-        if (isReady && timeSinceLastOutput >= 500) {
-          this.log(`✅ Claude session is ready for input`);
-          if (checkInterval) clearInterval(checkInterval);
-          resolve(true);
-          return;
-        }
-        
-        // Alternative detection: if we have substantial output and no new output for 2 seconds
-        if (screenBuffer.length > 100 && timeSinceLastOutput >= 2000) {
-          this.log(`✅ Claude session is ready (detected by output stabilization)`);
-          if (checkInterval) clearInterval(checkInterval);
-          resolve(true);
-          return;
-        }
-        
-        this.debugLog(`Waiting for Claude ready... (${screenBuffer.length} chars in buffer, last output: ${timeSinceLastOutput}ms ago)`);
-      };
-      
-      // Track output updates for timing during startup
-      const outputTracker = (data) => {
-        lastOutputTime = Date.now();
-      };
-      
-      this.on('claude-output', outputTracker);
-      
-      // Cleanup tracker when done
-      const originalResolve = resolve;
-      resolve = (result) => {
-        this.off('claude-output', outputTracker);
-        originalResolve(result);
-      };
-      
-      // Start checking every 500ms
-      checkInterval = setInterval(checkReady, 500);
-      checkReady(); // Initial check
-    });
-  }
 
   // Removed waitForSessionReady - replaced with Claude-Autopilot style waitForClaudeReady
 
@@ -601,115 +545,13 @@ export class ClaudeSessionManager extends EventEmitter {
     const rawText = data.toString();
     this.lastActivity = Date.now();
     
-    // Send to throttled output system (Claude-Autopilot style)
-    this.sendClaudeOutput(rawText);
+    // Use OutputThrottler for sophisticated output handling
+    this.outputThrottler.processOutput(rawText);
+    
+    // Update current screen buffer for legacy compatibility
+    this.currentScreenBuffer = this.outputThrottler.getCurrentBuffer();
   }
 
-  // Claude-Autopilot style output handling with throttling and auto-clear
-  sendClaudeOutput(output) {
-    this.outputBuffer += output;
-    
-    // Prevent buffer overflow with more memory-efficient approach
-    if (this.outputBuffer.length > this.OUTPUT_MAX_BUFFER_SIZE) {
-      const oldLength = this.outputBuffer.length;
-      const targetSize = Math.floor(this.OUTPUT_MAX_BUFFER_SIZE * 0.75);
-      
-      // Use slice which is more memory efficient than substring
-      // and explicitly trigger garbage collection hint
-      const trimmedBuffer = this.outputBuffer.slice(-targetSize);
-      this.outputBuffer = null; // Help GC by nullifying old reference
-      this.outputBuffer = trimmedBuffer;
-      
-      this.debugLog(`📦 Output buffer too large (${oldLength} chars), truncating to ${this.outputBuffer.length} chars`);
-      
-      // Suggest garbage collection for large buffer operations
-      if (oldLength > 200000 && global.gc) {
-        setImmediate(() => {
-          global.gc();
-          this.debugLog(`🗑️ Garbage collection triggered after large buffer trim`);
-        });
-      }
-    }
-    
-    // Handle clear screen patterns
-    const clearScreenPatterns = ['\x1b[2J', '\x1b[H\x1b[2J', '\x1b[2J\x1b[H', '\x1b[1;1H\x1b[2J', '\x1b[2J\x1b[1;1H', '\x1b[3J'];
-    let foundClearScreen = false;
-    let lastClearScreenIndex = -1;
-    
-    for (const pattern of clearScreenPatterns) {
-      const index = this.outputBuffer.lastIndexOf(pattern);
-      if (index > lastClearScreenIndex) {
-        lastClearScreenIndex = index;
-        foundClearScreen = true;
-      }
-    }
-    
-    if (foundClearScreen) {
-      this.debugLog(`🖥️  Clear screen detected - reset screen buffer`);
-      const newScreen = this.outputBuffer.substring(lastClearScreenIndex);
-      this.currentScreenBuffer = newScreen;
-      this.outputBuffer = this.currentScreenBuffer;
-    } else {
-      this.currentScreenBuffer = this.outputBuffer;
-    }
-    
-    // Throttle output to prevent UI freezing
-    const now = Date.now();
-    const timeSinceLastOutput = now - this.lastOutputTime;
-    
-    if (timeSinceLastOutput >= this.OUTPUT_THROTTLE_MS) {
-      this.flushClaudeOutput();
-    } else {
-      if (!this.outputTimer) {
-        const delay = this.OUTPUT_THROTTLE_MS - timeSinceLastOutput;
-        this.outputTimer = setTimeout(() => {
-          this.flushClaudeOutput();
-        }, delay);
-      }
-    }
-    
-    // Set up auto-clear timer
-    if (!this.autoClearTimer) {
-      this.autoClearTimer = setTimeout(() => {
-        this.clearClaudeOutput();
-      }, this.OUTPUT_AUTO_CLEAR_MS);
-    }
-  }
-
-  flushClaudeOutput() {
-    if (this.currentScreenBuffer.length === 0) {
-      return;
-    }
-    
-    const output = this.currentScreenBuffer;
-    this.lastOutputTime = Date.now();
-    
-    if (this.outputTimer) {
-      clearTimeout(this.outputTimer);
-      this.outputTimer = null;
-    }
-    
-    this.debugLog(`📤 Flushing Claude output (${output.length} chars)`);
-    
-    // Always emit raw terminal output for real-time display
-    this.emit('claude-output', output);
-  }
-
-  clearClaudeOutput() {
-    this.debugLog(`🧹 Auto-clearing Claude output buffer (${this.currentScreenBuffer.length} chars)`);
-    
-    this.outputBuffer = '';
-    this.currentScreenBuffer = '';
-    
-    if (this.outputTimer) {
-      clearTimeout(this.outputTimer);
-      this.outputTimer = null;
-    }
-    if (this.autoClearTimer) {
-      clearTimeout(this.autoClearTimer);
-      this.autoClearTimer = null;
-    }
-  }
 
   // Claude-Autopilot style: we handle raw terminal output directly, no JSON message parsing needed
 
@@ -1343,34 +1185,32 @@ export class ClaudeSessionManager extends EventEmitter {
     
     if (resetCount > 0) {
       this.log(`🔄 Reset ${resetCount} processing messages to pending status`);
-      // Save queue with updated message statuses
-      this.saveQueueToFile().catch(error => {
-        this.log(`⚠️ Failed to save queue after manual stop: ${error.message}`);
-      });
+      // Save queue with updated message statuses using QueuePersistenceManager
+      if (this.currentWorkingDirectory) {
+        this.queuePersistence.saveQueue(this.currentWorkingDirectory, this.messageQueue).catch(error => {
+          this.log(`⚠️ Failed to save queue after manual stop: ${error.message}`);
+        });
+      }
     }
     
-    if (this.pythonProcess && !this.pythonProcess.killed) {
+    // Use ProcessManager for graceful process termination
+    if (this.processId) {
       try {
-        // Try graceful exit first
-        const exitCommand = { action: 'exit' };
-        this.pythonProcess.stdin.write(JSON.stringify(exitCommand) + '\n');
-        
-        // Wait for graceful exit with shorter timeout
-        await new Promise((resolve) => {
-          const timeout = setTimeout(() => {
-            this.log('⏰ Graceful exit timeout, forcing termination');
-            resolve();
-          }, 2000); // Reduced from 5000ms to 2000ms
-
-          const exitHandler = () => {
-            clearTimeout(timeout);
-            resolve();
-          };
-
-          this.pythonProcess.once('exit', exitHandler);
-        });
+        const success = await this.processManager.terminateProcess(this.processId);
+        if (success) {
+          this.log('✅ Process terminated gracefully via ProcessManager');
+        } else {
+          this.log('⚠️ Process termination via ProcessManager failed');
+        }
       } catch (error) {
-        this.log(`Warning: Error during graceful exit: ${error.message}`);
+        this.log(`⚠️ Error during ProcessManager termination: ${error.message}`);
+      }
+    } else if (this.pythonProcess && !this.pythonProcess.killed) {
+      // Fallback to legacy termination for compatibility
+      try {
+        this.pythonProcess.kill('SIGTERM');
+      } catch (error) {
+        this.log(`⚠️ Error during fallback termination: ${error.message}`);
       }
     }
 

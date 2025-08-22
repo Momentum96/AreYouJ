@@ -83,7 +83,13 @@ export const useTaskFilter = (tasks: Task[]) => {
       }
       
       return task;
-    }).filter(task => task !== null) as Task[];
+    }).filter(task => task !== null)
+    .sort((a, b) => {
+      // ID를 숫자로 변환해서 오름차순 정렬
+      const idA = parseInt(a!.id, 10);
+      const idB = parseInt(b!.id, 10);
+      return idA - idB;
+    }) as Task[];
   }, [tasks, searchTerm, filters]);
 
   const updateFilter = (key: keyof FilterOptions, value: FilterOptions[keyof FilterOptions]) => {

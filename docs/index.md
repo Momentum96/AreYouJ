@@ -20,6 +20,12 @@ React + Node.js 기반의 로컬 Claude 인터페이스로 PTY 기반 직접 제
 - **SQLite Integration**: 로컬 데이터베이스 기반 상태 관리
 - **Component-based UI**: React 컴포넌트 구조
 
+### Planned Architecture (Dynamic Session Orchestration)
+- **SessionOrchestrator**: 동적 세션 생성/관리 시스템
+- **No-Timeout Persistence**: 수동 종료까지 세션 지속
+- **Central Monitoring**: Orchestration 페이지에서 통합 관리
+- **Session Isolation**: 세션별 독립적 메시지 큐 및 PTY 프로세스
+
 ## Key Files
 
 - `server/index.js` - Express 서버 및 WebSocket 핸들러
@@ -29,10 +35,16 @@ React + Node.js 기반의 로컬 Claude 인터페이스로 PTY 기반 직접 제
 
 ## Development Focus
 
-현재 **모바일 알림 및 원격 모니터링 시스템** 개선에 집중
+현재 **Dynamic Session Orchestration Architecture** 에 집중 ([[2025-08-22]])
+- SessionOrchestrator 기반 동적 세션 관리 시스템
+- 어떤 디렉토리에서든 즉시 세션 시작 가능
+- 타임아웃 없는 세션 지속성 및 중앙 모니터링
+- Orchestration → Automation 페이지 플로우 구현
+
+### Previous Focus
+- 모바일 알림 및 원격 모니터링 시스템 개선 완료
 - Omnara 방식 분석을 통한 개선점 도출
-- 사용자 경험 향상을 위한 UI/UX 개선
-- 다중 프로젝트/에이전트 관리 기능 검토
+- 네트워크 접근성 및 CORS 이슈 해결
 
 ## Team Preferences
 

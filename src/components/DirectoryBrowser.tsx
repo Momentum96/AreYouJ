@@ -193,7 +193,7 @@ export function DirectoryBrowser({ isOpen, onClose, onSelect, initialPath }: Dir
           )}
 
           {/* Footer */}
-          <div className="flex items-center justify-between pt-4 border-t">
+          <div className="flex items-center justify-between pt-2 border-t">
             <button
               onClick={onClose}
               className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground border border-border rounded hover:bg-muted/50 transition-colors"

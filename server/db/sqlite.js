@@ -2,7 +2,60 @@ import sqlite3 from 'sqlite3';
 import path from 'path';
 import fs from 'fs';
 
+// Database configuration constants
+const DB_CONFIG = {
+  // Security limits
+  MAX_JSON_SIZE: 1024 * 1024, // 1MB JSON size limit
+  MAX_QUERY_PARAMS: 100, // Maximum query parameters
+  
+  // Connection management
+  IDLE_TIMEOUT: 30000, // 30 seconds idle timeout
+  CONNECTION_RETRY_ATTEMPTS: 3,
+  CONNECTION_RETRY_DELAY: 1000, // 1 second
+  
+  // Performance
+  MAX_CONCURRENT_CONNECTIONS: 10,
+  QUERY_TIMEOUT: 30000, // 30 seconds
+  TRANSACTION_TIMEOUT: 60000, // 1 minute
+  
+  // Session limits
+  MAX_SESSIONS_PER_USER: 50,
+  MAX_MESSAGES_PER_SESSION: 10000
+};
+
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
+
+// Standardized error classes for consistent error handling
+class DatabaseError extends Error {
+  constructor(message, code = 'DATABASE_ERROR', details = null) {
+    super(message);
+    this.name = 'DatabaseError';
+    this.code = code;
+    this.details = details;
+    this.timestamp = new Date().toISOString();
+  }
+}
+
+class SessionError extends Error {
+  constructor(message, sessionId = null, code = 'SESSION_ERROR', details = null) {
+    super(message);
+    this.name = 'SessionError';
+    this.sessionId = sessionId;
+    this.code = code;
+    this.details = details;
+    this.timestamp = new Date().toISOString();
+  }
+}
+
+class ValidationError extends Error {
+  constructor(message, field = null, value = null) {
+    super(message);
+    this.name = 'ValidationError';
+    this.field = field;
+    this.value = value;
+    this.timestamp = new Date().toISOString();
+  }
+}
 
 class SQLiteManager {
   constructor() {
@@ -12,7 +65,7 @@ class SQLiteManager {
     this.pendingRequests = [];
     this.connectionTimeout = null;
     this.lastActivity = null;
-    this.IDLE_TIMEOUT = 30 * 60 * 1000; // 30 minutes idle timeout
+    this.IDLE_TIMEOUT = DB_CONFIG.IDLE_TIMEOUT;
     this._setupProcessHandlers();
   }
 
@@ -1225,7 +1278,7 @@ class SQLiteManager {
   // ===== UTILITY METHODS =====
 
   /**
-   * Safely parse JSON string with fallback
+   * Safely parse JSON string with security validation
    * @param {string} jsonString - JSON string to parse
    * @param {any} defaultValue - Default value if parsing fails
    * @returns {any} - Parsed object or default value
@@ -1236,8 +1289,29 @@ class SQLiteManager {
       return defaultValue;
     }
     
+    // Security: Limit JSON string size to prevent DoS attacks
+    if (jsonString.length > DB_CONFIG.MAX_JSON_SIZE) {
+      console.warn(`⚠️ JSON string too large (${jsonString.length} bytes), max allowed: ${DB_CONFIG.MAX_JSON_SIZE}`);
+      return defaultValue;
+    }
+    
+    // Security: Basic content validation
+    if (jsonString.includes('__proto__') || jsonString.includes('constructor.prototype')) {
+      console.warn('⚠️ JSON string contains potentially dangerous prototype pollution patterns');
+      return defaultValue;
+    }
+    
     try {
-      return JSON.parse(jsonString);
+      const parsed = JSON.parse(jsonString);
+      
+      // Security: Prevent prototype pollution
+      if (parsed && typeof parsed === 'object' && ('__proto__' in parsed || 'constructor' in parsed)) {
+        console.warn('⚠️ JSON contains prototype pollution attempt, sanitizing...');
+        delete parsed.__proto__;
+        delete parsed.constructor;
+      }
+      
+      return parsed;
     } catch (error) {
       console.error('⚠️ JSON parsing failed:', error.message);
       return defaultValue;

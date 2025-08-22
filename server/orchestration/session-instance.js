@@ -9,6 +9,27 @@ import { OutputThrottler } from '../utils/output-throttler.js';
 import { ProcessManager } from '../utils/process-manager.js';
 import { QueuePersistenceManager } from '../utils/queue-persistence.js';
 
+// Configuration constants - centralized for easy maintenance
+const SESSION_CONFIG = {
+  // Timeouts
+  DEFAULT_TIMEOUT_MS: 3600000, // 1 hour
+  PROCESSING_STUCK_THRESHOLD_MS: 600000, // 10 minutes
+  HEALTH_CHECK_INTERVAL_MS: 30000, // 30 seconds
+  
+  // Limits
+  MAX_CONCURRENT_SESSIONS: 50,
+  MAX_MESSAGE_QUEUE_SIZE: 1000,
+  MAX_ERROR_COUNT: 5,
+  
+  // Process management
+  GRACEFUL_SHUTDOWN_TIMEOUT_MS: 10000, // 10 seconds
+  FORCE_KILL_TIMEOUT_MS: 5000, // 5 seconds
+  
+  // Monitoring
+  ACTIVITY_TIMEOUT_MS: 300000, // 5 minutes inactivity
+  METRICS_COLLECTION_INTERVAL_MS: 60000 // 1 minute
+};
+
 /**
  * SessionInstance - Individual session representation with independent resources
  * 
@@ -67,7 +88,7 @@ export class SessionInstance extends EventEmitter {
     
     this.promptDetector = new ClaudePromptDetector({
       debounceThresholdMs: userConfig.debounceThresholdMs || 2000,
-      timeoutMs: userConfig.timeoutMs || 3600000
+      timeoutMs: userConfig.timeoutMs || SESSION_CONFIG.DEFAULT_TIMEOUT_MS
     });
     
     this.processManager = new ProcessManager({
@@ -552,7 +573,7 @@ export class SessionInstance extends EventEmitter {
     // Check for stuck processing (over 10 minutes)
     if (this.currentlyProcessing) {
       const processingTime = Date.now() - new Date(this.currentlyProcessing.processingStartedAt).getTime();
-      if (processingTime > 600000) { // 10 minutes
+      if (processingTime > SESSION_CONFIG.PROCESSING_STUCK_THRESHOLD_MS) {
         this.log('⚠️ Health check failed - processing stuck');
         this.status = 'error';
         this.emit('session-unhealthy', { sessionId: this.id, reason: 'processing_stuck' });

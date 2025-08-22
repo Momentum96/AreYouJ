@@ -81,6 +81,16 @@ export const Automation = () => {
   useEffect(() => {
     console.log('🤖 Automation component initializing...');
     
+    // 연결 정보 디버깅
+    console.log('🔍 연결 정보:', {
+      currentURL: window.location.href,
+      hostname: window.location.hostname,
+      port: window.location.port,
+      protocol: window.location.protocol,
+      websocketURL: `ws://${window.location.hostname}:5001`,
+      apiURL: `http://${window.location.hostname}:5001/api`
+    });
+    
     // Load initial data
     loadQueue();
     loadStatus();
@@ -435,7 +445,7 @@ export const Automation = () => {
       if (hasPendingMessages && isSessionReady && !isCurrentlyProcessing) {
         console.log('✅ Auto-starting processing - conditions met');
         // Trigger auto-processing by calling the server's auto-start trigger endpoint
-        await fetch('http://localhost:5001/api/processing/auto-start', {
+        await fetch(`http://${window.location.hostname}:5001/api/processing/auto-start`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -639,7 +649,7 @@ export const Automation = () => {
         }
         
         // Start session only (not processing)
-        const response = await fetch('http://localhost:5001/api/session/start', {
+        const response = await fetch(`http://${window.location.hostname}:5001/api/session/start`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });

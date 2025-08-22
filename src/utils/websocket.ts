@@ -23,8 +23,14 @@ export class WebSocketClient {
   private maxQueueSize = 100;
   private url: string;
 
-  constructor(url: string = 'ws://localhost:5001') {
-    this.url = url;
+  constructor(url?: string) {
+    // 동적 WebSocket URL 생성
+    if (!url) {
+      const hostname = window.location.hostname;
+      this.url = `ws://${hostname}:5001`;
+    } else {
+      this.url = url;
+    }
   }
 
   connect(): Promise<void> {

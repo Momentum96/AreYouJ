@@ -1,4 +1,11 @@
-const API_BASE_URL = 'http://localhost:5001/api';
+// 동적 API URL 생성 함수
+function getApiBaseUrl(): string {
+  // 현재 페이지의 hostname을 사용하되, 포트는 5001로 고정
+  const hostname = window.location.hostname;
+  return `http://${hostname}:5001/api`;
+}
+
+const API_BASE_URL = getApiBaseUrl();
 
 export interface QueueMessage {
   id: string;

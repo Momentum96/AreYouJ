@@ -188,7 +188,7 @@ const MobileSubTaskCard = ({
   onDeleteSubtask: (subtaskId: string, subtaskTitle: string) => void;
   isAddingToQueue: string | null;
 }) => (
-  <div className="bg-muted/30 border border-border/50 rounded-lg p-3 ml-4 space-y-3">
+  <div className="bg-muted/30 border border-border/50 rounded-lg p-3 ml-6 space-y-3">
     {/* 헤더 */}
     <div className="flex items-start justify-between">
       <span className="font-mono text-sm text-muted-foreground">#{subtask.id}</span>
@@ -696,7 +696,7 @@ export const TaskTable = ({ tasks, isLoading = false, onTaskDeleted }: TaskTable
             <p className="text-sm text-muted-foreground">작업이 없습니다.</p>
           </div>
         ) : (
-          <div className="space-y-4 p-4">
+          <div className="space-y-4">
             {tasks.map((task) => {
               const isExpanded = expandedTasks.has(task.id);
               const hasSubtasks = task.subtasks && task.subtasks.length > 0;
@@ -717,7 +717,7 @@ export const TaskTable = ({ tasks, isLoading = false, onTaskDeleted }: TaskTable
                   {/* 서브태스크가 있을 경우 렌더링 */}
                   {hasSubtasks && (
                     <CollapsibleContent className="data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up overflow-hidden">
-                      <div className="space-y-3 mt-3">
+                      <div className="space-y-4 mt-4">
                         {task.subtasks!.map((subtask, index) => (
                           <div 
                             key={subtask.id} 

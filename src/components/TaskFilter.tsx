@@ -74,7 +74,7 @@ export const TaskFilter = ({
   ];
 
   return (
-    <Card>
+    <Card className="hidden md:block">
       <CardContent className="">
         {/* 검색바와 기본 컨트롤 */}
         <div className="flex items-center gap-4 mb-3 pt-2">

@@ -105,6 +105,8 @@ function App() {
       if (message.type === 'settings-update') {
         const newProjectPath = message.data.settings.projectHomePath;
         if (newProjectPath && newProjectPath !== projectPath) {
+          // 에러 상태 즉시 초기화 (새로운 프로젝트로 이동 시)
+          if (error) setError(null);
           // 로딩 상태를 보여주면서 tasks를 새로고침
           setTimeout(() => {
             fetchTasks(true);
@@ -114,6 +116,8 @@ function App() {
     };
 
     const handleWorkingDirectoryChanged = () => {
+      // 에러 상태 즉시 초기화 (작업 디렉토리 변경 시)
+      if (error) setError(null);
       setTimeout(() => {
         fetchTasks(true);
       }, 100);
@@ -149,7 +153,7 @@ function App() {
       // Note: We don't disconnect the WebSocket here because it should persist
       // throughout the entire app lifecycle. It will be cleaned up when the browser closes.
     };
-  }, []); // Empty dependency - only run once on mount
+  }, [error, projectPath]); // Include error and projectPath in dependencies
 
   useEffect(() => {
     // 프로젝트 이름을 대시보드 제목으로 변환

@@ -632,9 +632,12 @@ class SQLiteManager {
         throw new Error(`Target project docs directory does not exist: ${docsDir}. Please create it manually or initialize with tasks first.`);
       }
 
-      const dbExists = fs.existsSync(newDbPath);
+      // Check if database exists
+      if (!fs.existsSync(newDbPath)) {
+        throw new Error(`Database not found in target project: ${newDbPath}. Please create tasks first or initialize the database manually.`);
+      }
 
-      // Create new connection first
+      // Create new connection to existing database
       const newDb = await new Promise((resolve, reject) => {
         const db = new sqlite3.Database(newDbPath, (err) => {
           if (err) {
@@ -644,51 +647,6 @@ class SQLiteManager {
           }
         });
       });
-
-      // If new database, create schema
-      if (!dbExists) {
-        await new Promise((resolve, reject) => {
-          const schema = `
-            -- Main tasks table
-            CREATE TABLE IF NOT EXISTS tasks (
-              id TEXT PRIMARY KEY,
-              title TEXT NOT NULL,
-              description TEXT,
-              status TEXT CHECK (status IN ('pending', 'in-progress', 'done')) DEFAULT 'pending',
-              priority TEXT CHECK (priority IN ('high', 'medium', 'low')) DEFAULT 'medium',
-              notes TEXT,
-              details TEXT DEFAULT '',
-              parent_id TEXT,
-              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-              FOREIGN KEY (parent_id) REFERENCES tasks(id)
-            );
-
-            -- Task dependencies
-            CREATE TABLE IF NOT EXISTS task_dependencies (
-              task_id TEXT NOT NULL,
-              dependency_id TEXT NOT NULL,
-              PRIMARY KEY (task_id, dependency_id),
-              FOREIGN KEY (task_id) REFERENCES tasks(id),
-              FOREIGN KEY (dependency_id) REFERENCES tasks(id)
-            );
-
-            -- Performance indexes
-            CREATE INDEX IF NOT EXISTS idx_task_status ON tasks(status);
-            CREATE INDEX IF NOT EXISTS idx_task_priority ON tasks(priority);
-            CREATE INDEX IF NOT EXISTS idx_task_parent ON tasks(parent_id);
-            CREATE INDEX IF NOT EXISTS idx_task_updated ON tasks(updated_at);
-          `;
-
-          newDb.exec(schema, (err) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve();
-            }
-          });
-        });
-      }
 
       // Atomic switch: update references
       this.db = newDb;

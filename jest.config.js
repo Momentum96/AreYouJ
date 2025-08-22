@@ -1,5 +1,4 @@
 export default {
-  preset: '@jest/preset-experimental-esm',
   testEnvironment: 'node',
   transform: {},
   testMatch: [
@@ -12,8 +11,5 @@ export default {
     "!**/node_modules/**"
   ],
   coverageDirectory: "coverage",
-  coverageReporters: ["text", "lcov", "html"],
-  moduleNameMapper: {
-    '^(\\.{1,2}/.*)\\.js$': '$1'
-  }
+  coverageReporters: ["text", "lcov", "html"]
 };

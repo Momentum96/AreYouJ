@@ -2,7 +2,60 @@ import sqlite3 from 'sqlite3';
 import path from 'path';
 import fs from 'fs';
 
+// Database configuration constants
+const DB_CONFIG = {
+  // Security limits
+  MAX_JSON_SIZE: 1024 * 1024, // 1MB JSON size limit
+  MAX_QUERY_PARAMS: 100, // Maximum query parameters
+  
+  // Connection management
+  IDLE_TIMEOUT: 30000, // 30 seconds idle timeout
+  CONNECTION_RETRY_ATTEMPTS: 3,
+  CONNECTION_RETRY_DELAY: 1000, // 1 second
+  
+  // Performance
+  MAX_CONCURRENT_CONNECTIONS: 10,
+  QUERY_TIMEOUT: 30000, // 30 seconds
+  TRANSACTION_TIMEOUT: 60000, // 1 minute
+  
+  // Session limits
+  MAX_SESSIONS_PER_USER: 50,
+  MAX_MESSAGES_PER_SESSION: 10000
+};
+
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
+
+// Standardized error classes for consistent error handling
+class DatabaseError extends Error {
+  constructor(message, code = 'DATABASE_ERROR', details = null) {
+    super(message);
+    this.name = 'DatabaseError';
+    this.code = code;
+    this.details = details;
+    this.timestamp = new Date().toISOString();
+  }
+}
+
+class SessionError extends Error {
+  constructor(message, sessionId = null, code = 'SESSION_ERROR', details = null) {
+    super(message);
+    this.name = 'SessionError';
+    this.sessionId = sessionId;
+    this.code = code;
+    this.details = details;
+    this.timestamp = new Date().toISOString();
+  }
+}
+
+class ValidationError extends Error {
+  constructor(message, field = null, value = null) {
+    super(message);
+    this.name = 'ValidationError';
+    this.field = field;
+    this.value = value;
+    this.timestamp = new Date().toISOString();
+  }
+}
 
 class SQLiteManager {
   constructor() {
@@ -12,7 +65,7 @@ class SQLiteManager {
     this.pendingRequests = [];
     this.connectionTimeout = null;
     this.lastActivity = null;
-    this.IDLE_TIMEOUT = 30 * 60 * 1000; // 30 minutes idle timeout
+    this.IDLE_TIMEOUT = DB_CONFIG.IDLE_TIMEOUT;
     this._setupProcessHandlers();
   }
 
@@ -47,17 +100,23 @@ class SQLiteManager {
    * @returns {Promise<boolean>} - Success status
    */
   async initDB(projectHomePath, isSwitch = false) {
-    // If we're already connecting to the same path, wait for it
-    if (this.connectionState === 'connecting' && this.dbPath === path.join(projectHomePath, 'docs', 'tasks.db')) {
-      return this._waitForConnection();
+    const targetPath = path.join(projectHomePath, 'docs', 'tasks.db');
+    
+    // Prevent race conditions with atomic state checking
+    if (this.connectionState === 'connecting' || this.connectionState === 'switching') {
+      if (this.dbPath === targetPath) {
+        return this._waitForConnection();
+      }
+      // If connecting to different path, wait for current connection to complete then proceed
+      await this._waitForConnection();
     }
 
-    // If we're switching, set state appropriately
-    if (isSwitch) {
-      this.connectionState = 'switching';
-    } else {
-      this.connectionState = 'connecting';
-    }
+    // Atomically set the connection state
+    const previousState = this.connectionState;
+    this.connectionState = isSwitch ? 'switching' : 'connecting';
+    
+    // Clear any existing timer to prevent memory leaks during state transitions
+    this._clearIdleTimer();
 
     try {
       this.dbPath = path.join(projectHomePath, 'docs', 'tasks.db');
@@ -76,6 +135,7 @@ class SQLiteManager {
           if (err) {
             console.error('Failed to open SQLite database:', err);
             this.connectionState = 'disconnected';
+            this._clearIdleTimer(); // Ensure timer is cleared on connection error
             this._rejectPendingRequests(err);
             reject(err);
             return;
@@ -95,7 +155,9 @@ class SQLiteManager {
             this._resolvePendingRequests();
             resolve(true);
           } catch (schemaError) {
+            console.error('Schema creation failed:', schemaError);
             this.connectionState = 'disconnected';
+            this._clearIdleTimer(); // Ensure timer is cleared on error
             this._rejectPendingRequests(schemaError);
             reject(schemaError);
           }
@@ -104,6 +166,7 @@ class SQLiteManager {
     } catch (error) {
       console.error('Failed to initialize SQLite database:', error);
       this.connectionState = 'disconnected';
+      this._clearIdleTimer(); // Ensure timer is cleared on any initialization error
       this._rejectPendingRequests(error);
       throw error;
     }
@@ -139,11 +202,52 @@ class SQLiteManager {
         FOREIGN KEY (dependency_id) REFERENCES tasks(id)
       );
 
-      -- Performance indexes
+      -- Session management for SessionOrchestrator persistence
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        working_directory TEXT NOT NULL,
+        status TEXT CHECK (status IN ('initializing', 'active', 'idle', 'busy', 'error', 'terminated', 'unhealthy')) DEFAULT 'initializing',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+        started_at DATETIME,
+        terminated_at DATETIME,
+        user_config TEXT, -- JSON serialized config
+        message_count INTEGER DEFAULT 0,
+        total_processing_time INTEGER DEFAULT 0, -- milliseconds
+        error_count INTEGER DEFAULT 0,
+        metadata TEXT -- JSON serialized metadata
+      );
+
+      -- Message queue persistence for session isolation
+      CREATE TABLE IF NOT EXISTS session_messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        message TEXT NOT NULL,
+        status TEXT CHECK (status IN ('pending', 'processing', 'completed', 'error')) DEFAULT 'pending',
+        sequence INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        processing_started_at DATETIME,
+        completed_at DATETIME,
+        processing_time_ms INTEGER,
+        error_message TEXT,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+
+      -- Performance indexes for tasks
       CREATE INDEX IF NOT EXISTS idx_task_status ON tasks(status);
       CREATE INDEX IF NOT EXISTS idx_task_priority ON tasks(priority);
       CREATE INDEX IF NOT EXISTS idx_task_parent ON tasks(parent_id);
       CREATE INDEX IF NOT EXISTS idx_task_updated ON tasks(updated_at);
+
+      -- Performance indexes for sessions
+      CREATE INDEX IF NOT EXISTS idx_session_status ON sessions(status);
+      CREATE INDEX IF NOT EXISTS idx_session_last_activity ON sessions(last_activity);
+      CREATE INDEX IF NOT EXISTS idx_session_working_dir ON sessions(working_directory);
+
+      -- Performance indexes for session messages
+      CREATE INDEX IF NOT EXISTS idx_session_messages_session_id ON session_messages(session_id);
+      CREATE INDEX IF NOT EXISTS idx_session_messages_status ON session_messages(status);
+      CREATE INDEX IF NOT EXISTS idx_session_messages_sequence ON session_messages(session_id, sequence);
     `;
 
     return new Promise((resolve, reject) => {
@@ -192,8 +296,12 @@ class SQLiteManager {
    * @private
    */
   _startIdleTimer() {
-    if (this.connectionTimeout) {
-      clearTimeout(this.connectionTimeout);
+    // Prevent race conditions in timer creation
+    this._clearIdleTimer();
+    
+    // Only create timer if we're actually connected
+    if (this.connectionState !== 'connected') {
+      return;
     }
     
     this.connectionTimeout = setTimeout(() => {
@@ -203,6 +311,17 @@ class SQLiteManager {
         this.closeDB().catch(console.error);
       }
     }, this.IDLE_TIMEOUT);
+  }
+
+  /**
+   * Clear idle timer safely
+   * @private
+   */
+  _clearIdleTimer() {
+    if (this.connectionTimeout) {
+      clearTimeout(this.connectionTimeout);
+      this.connectionTimeout = null;
+    }
   }
 
   /**
@@ -691,11 +810,8 @@ class SQLiteManager {
    * @returns {Promise<void>}
    */
   async closeDB() {
-    // Clear idle timer
-    if (this.connectionTimeout) {
-      clearTimeout(this.connectionTimeout);
-      this.connectionTimeout = null;
-    }
+    // Clear idle timer using centralized method
+    this._clearIdleTimer();
 
     return new Promise((resolve, reject) => {
       if (this.db) {
@@ -736,6 +852,490 @@ class SQLiteManager {
    */
   getDBPath() {
     return this.dbPath;
+  }
+
+  // ===== SESSION PERSISTENCE METHODS =====
+
+  /**
+   * Create new session record in database
+   * @param {Object} sessionData - Session data
+   * @returns {Promise<Object>} - Created session result
+   */
+  async createSession(sessionData) {
+    const {
+      id,
+      workingDirectory,
+      status = 'initializing',
+      userConfig = {},
+      metadata = {}
+    } = sessionData;
+
+    if (!id || !workingDirectory) {
+      throw new Error('Session ID and working directory are required');
+    }
+
+    try {
+      const result = await this.executeStatement(`
+        INSERT INTO sessions (
+          id, working_directory, status, user_config, metadata
+        ) VALUES (?, ?, ?, ?, ?)
+      `, [
+        id,
+        workingDirectory,
+        status,
+        JSON.stringify(userConfig),
+        JSON.stringify(metadata)
+      ]);
+
+      console.log(`✅ Session ${id} created in database`);
+      return { sessionId: id, ...result };
+    } catch (error) {
+      console.error(`❌ Failed to create session ${id} in database:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update session status and metadata
+   * @param {string} sessionId - Session ID
+   * @param {Object} updates - Fields to update
+   * @returns {Promise<Object>} - Update result
+   */
+  async updateSession(sessionId, updates) {
+    if (!sessionId) {
+      throw new Error('Session ID is required');
+    }
+
+    const allowedFields = [
+      'status', 'last_activity', 'started_at', 'terminated_at',
+      'message_count', 'total_processing_time', 'error_count', 'metadata'
+    ];
+
+    const setClauses = [];
+    const params = [];
+
+    Object.entries(updates).forEach(([field, value]) => {
+      if (allowedFields.includes(field)) {
+        setClauses.push(`${field} = ?`);
+        if (field === 'metadata' && typeof value === 'object') {
+          params.push(JSON.stringify(value));
+        } else {
+          params.push(value);
+        }
+      }
+    });
+
+    if (setClauses.length === 0) {
+      throw new Error('No valid fields to update');
+    }
+
+    params.push(sessionId);
+
+    try {
+      const result = await this.executeStatement(`
+        UPDATE sessions SET ${setClauses.join(', ')} WHERE id = ?
+      `, params);
+
+      if (result.changes === 0) {
+        throw new Error(`Session ${sessionId} not found`);
+      }
+
+      return result;
+    } catch (error) {
+      console.error(`❌ Failed to update session ${sessionId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get session by ID
+   * @param {string} sessionId - Session ID
+   * @returns {Promise<Object|null>} - Session data or null
+   */
+  async getSession(sessionId) {
+    if (!sessionId) {
+      throw new Error('Session ID is required');
+    }
+
+    try {
+      const sessions = await this.executeQuery(
+        'SELECT * FROM sessions WHERE id = ?',
+        [sessionId]
+      );
+
+      if (sessions.length === 0) {
+        return null;
+      }
+
+      const session = sessions[0];
+      return {
+        ...session,
+        userConfig: session.user_config ? JSON.parse(session.user_config) : {},
+        metadata: session.metadata ? JSON.parse(session.metadata) : {}
+      };
+    } catch (error) {
+      console.error(`❌ Failed to get session ${sessionId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all active sessions
+   * @returns {Promise<Array>} - Array of active sessions
+   */
+  async getActiveSessions() {
+    try {
+      const sessions = await this.executeQuery(`
+        SELECT * FROM sessions 
+        WHERE status IN ('initializing', 'active', 'idle', 'busy') 
+        ORDER BY last_activity DESC
+      `);
+
+      return sessions.map(session => ({
+        ...session,
+        userConfig: session.user_config ? JSON.parse(session.user_config) : {},
+        metadata: session.metadata ? JSON.parse(session.metadata) : {}
+      }));
+    } catch (error) {
+      console.error('❌ Failed to get active sessions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete session from database
+   * @param {string} sessionId - Session ID
+   * @returns {Promise<Object>} - Delete result
+   */
+  async deleteSession(sessionId) {
+    if (!sessionId) {
+      throw new Error('Session ID is required');
+    }
+
+    try {
+      return await this._executeInTransaction(async () => {
+        // Delete session messages first (CASCADE should handle this, but being explicit)
+        await this.executeStatement(
+          'DELETE FROM session_messages WHERE session_id = ?',
+          [sessionId]
+        );
+
+        // Delete session
+        const result = await this.executeStatement(
+          'DELETE FROM sessions WHERE id = ?',
+          [sessionId]
+        );
+
+        if (result.changes === 0) {
+          throw new Error(`Session ${sessionId} not found`);
+        }
+
+        console.log(`✅ Session ${sessionId} deleted from database`);
+        return result;
+      });
+    } catch (error) {
+      console.error(`❌ Failed to delete session ${sessionId}:`, error);
+      throw error;
+    }
+  }
+
+  // ===== SESSION MESSAGE PERSISTENCE METHODS =====
+
+  /**
+   * Save message to session queue
+   * @param {Object} messageData - Message data
+   * @returns {Promise<Object>} - Save result
+   */
+  async saveSessionMessage(messageData) {
+    const {
+      id,
+      sessionId,
+      message,
+      status = 'pending',
+      sequence
+    } = messageData;
+
+    if (!id || !sessionId || !message || sequence === undefined) {
+      throw new Error('Message ID, session ID, message content, and sequence are required');
+    }
+
+    try {
+      const result = await this.executeStatement(`
+        INSERT INTO session_messages (
+          id, session_id, message, status, sequence
+        ) VALUES (?, ?, ?, ?, ?)
+      `, [id, sessionId, message, status, sequence]);
+
+      return { messageId: id, ...result };
+    } catch (error) {
+      console.error(`❌ Failed to save message ${id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update message status and processing info
+   * @param {string} messageId - Message ID
+   * @param {Object} updates - Fields to update
+   * @returns {Promise<Object>} - Update result
+   */
+  async updateSessionMessage(messageId, updates) {
+    if (!messageId) {
+      throw new Error('Message ID is required');
+    }
+
+    const allowedFields = [
+      'status', 'processing_started_at', 'completed_at', 
+      'processing_time_ms', 'error_message'
+    ];
+
+    const setClauses = [];
+    const params = [];
+
+    Object.entries(updates).forEach(([field, value]) => {
+      if (allowedFields.includes(field)) {
+        setClauses.push(`${field} = ?`);
+        params.push(value);
+      }
+    });
+
+    if (setClauses.length === 0) {
+      throw new Error('No valid fields to update');
+    }
+
+    params.push(messageId);
+
+    try {
+      const result = await this.executeStatement(`
+        UPDATE session_messages SET ${setClauses.join(', ')} WHERE id = ?
+      `, params);
+
+      if (result.changes === 0) {
+        throw new Error(`Message ${messageId} not found`);
+      }
+
+      return result;
+    } catch (error) {
+      console.error(`❌ Failed to update message ${messageId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get messages for a session
+   * @param {string} sessionId - Session ID
+   * @param {Object} options - Query options
+   * @returns {Promise<Array>} - Array of messages
+   */
+  async getSessionMessages(sessionId, options = {}) {
+    if (!sessionId) {
+      throw new Error('Session ID is required');
+    }
+
+    const { status, limit, offset } = options;
+    let query = 'SELECT * FROM session_messages WHERE session_id = ?';
+    const params = [sessionId];
+
+    if (status) {
+      query += ' AND status = ?';
+      params.push(status);
+    }
+
+    query += ' ORDER BY sequence ASC';
+
+    if (limit) {
+      query += ' LIMIT ?';
+      params.push(limit);
+      if (offset) {
+        query += ' OFFSET ?';
+        params.push(offset);
+      }
+    }
+
+    try {
+      return await this.executeQuery(query, params);
+    } catch (error) {
+      console.error(`❌ Failed to get messages for session ${sessionId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete message from session queue
+   * @param {string} messageId - Message ID
+   * @returns {Promise<Object>} - Delete result
+   */
+  async deleteSessionMessage(messageId) {
+    if (!messageId) {
+      throw new Error('Message ID is required');
+    }
+
+    try {
+      const result = await this.executeStatement(
+        'DELETE FROM session_messages WHERE id = ?',
+        [messageId]
+      );
+
+      if (result.changes === 0) {
+        throw new Error(`Message ${messageId} not found`);
+      }
+
+      return result;
+    } catch (error) {
+      console.error(`❌ Failed to delete message ${messageId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get session statistics
+   * @param {string} sessionId - Session ID (optional, for all sessions if not provided)
+   * @returns {Promise<Object>} - Session statistics
+   */
+  async getSessionStats(sessionId = null) {
+    try {
+      let query, params;
+
+      if (sessionId) {
+        // Stats for specific session
+        query = `
+          SELECT 
+            s.id,
+            s.working_directory,
+            s.status,
+            s.message_count,
+            s.total_processing_time,
+            s.error_count,
+            COUNT(sm.id) as queued_messages,
+            SUM(CASE WHEN sm.status = 'pending' THEN 1 ELSE 0 END) as pending_messages,
+            SUM(CASE WHEN sm.status = 'processing' THEN 1 ELSE 0 END) as processing_messages,
+            SUM(CASE WHEN sm.status = 'completed' THEN 1 ELSE 0 END) as completed_messages,
+            SUM(CASE WHEN sm.status = 'error' THEN 1 ELSE 0 END) as error_messages
+          FROM sessions s
+          LEFT JOIN session_messages sm ON s.id = sm.session_id
+          WHERE s.id = ?
+          GROUP BY s.id
+        `;
+        params = [sessionId];
+      } else {
+        // Overall stats
+        query = `
+          SELECT 
+            COUNT(DISTINCT s.id) as total_sessions,
+            SUM(CASE WHEN s.status = 'active' THEN 1 ELSE 0 END) as active_sessions,
+            SUM(CASE WHEN s.status = 'idle' THEN 1 ELSE 0 END) as idle_sessions,
+            SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END) as error_sessions,
+            SUM(s.message_count) as total_messages_processed,
+            SUM(s.total_processing_time) as total_processing_time,
+            COUNT(sm.id) as total_queued_messages,
+            SUM(CASE WHEN sm.status = 'pending' THEN 1 ELSE 0 END) as pending_messages
+          FROM sessions s
+          LEFT JOIN session_messages sm ON s.id = sm.session_id
+        `;
+        params = [];
+      }
+
+      const result = await this.executeQuery(query, params);
+      return sessionId ? result[0] : result[0];
+    } catch (error) {
+      console.error('❌ Failed to get session stats:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Perform health check on sessions
+   * @returns {Promise<Object>} - Health check result
+   */
+  async performHealthCheck() {
+    try {
+      const unhealthySessions = await this.executeQuery(`
+        SELECT id, working_directory, error_count FROM sessions 
+        WHERE status = 'active' 
+        AND last_activity < datetime('now', '-1 hour')
+      `);
+      
+      let updatedCount = 0;
+      for (const session of unhealthySessions) {
+        await this.updateSession(session.id, { 
+          status: 'unhealthy',
+          error_count: (session.error_count || 0) + 1 
+        });
+        updatedCount++;
+      }
+      
+      console.log(`🏥 Health check completed: ${updatedCount} sessions marked as unhealthy`);
+      return { 
+        checkedSessions: unhealthySessions.length,
+        updatedSessions: updatedCount 
+      };
+    } catch (error) {
+      console.error('❌ Health check failed:', error);
+      throw error;
+    }
+  }
+
+  // ===== UTILITY METHODS =====
+
+  /**
+   * Safely parse JSON string with security validation
+   * @param {string} jsonString - JSON string to parse
+   * @param {any} defaultValue - Default value if parsing fails
+   * @returns {any} - Parsed object or default value
+   * @private
+   */
+  _safeJSONParse(jsonString, defaultValue = {}) {
+    if (!jsonString || typeof jsonString !== 'string') {
+      return defaultValue;
+    }
+    
+    // Security: Limit JSON string size to prevent DoS attacks
+    if (jsonString.length > DB_CONFIG.MAX_JSON_SIZE) {
+      console.warn(`⚠️ JSON string too large (${jsonString.length} bytes), max allowed: ${DB_CONFIG.MAX_JSON_SIZE}`);
+      return defaultValue;
+    }
+    
+    // Security: Basic content validation
+    if (jsonString.includes('__proto__') || jsonString.includes('constructor.prototype')) {
+      console.warn('⚠️ JSON string contains potentially dangerous prototype pollution patterns');
+      return defaultValue;
+    }
+    
+    try {
+      const parsed = JSON.parse(jsonString);
+      
+      // Security: Prevent prototype pollution
+      if (parsed && typeof parsed === 'object' && ('__proto__' in parsed || 'constructor' in parsed)) {
+        console.warn('⚠️ JSON contains prototype pollution attempt, sanitizing...');
+        delete parsed.__proto__;
+        delete parsed.constructor;
+      }
+      
+      return parsed;
+    } catch (error) {
+      console.error('⚠️ JSON parsing failed:', error.message);
+      return defaultValue;
+    }
+  }
+
+  /**
+   * Safely stringify object with fallback
+   * @param {any} obj - Object to stringify
+   * @param {string} defaultValue - Default value if stringification fails
+   * @returns {string} - JSON string or default value
+   * @private
+   */
+  _safeJSONStringify(obj, defaultValue = '{}') {
+    if (obj === null || obj === undefined) {
+      return defaultValue;
+    }
+    
+    try {
+      return JSON.stringify(obj);
+    } catch (error) {
+      console.error('⚠️ JSON stringification failed:', error.message);
+      return defaultValue;
+    }
   }
 }
 

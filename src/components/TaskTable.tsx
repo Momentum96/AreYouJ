@@ -8,7 +8,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { ChevronDown, Send, CheckCircle, AlertCircle } from 'lucide-react';
+import { ChevronDown, Send, CheckCircle, AlertCircle, MoreVertical } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import type { SubTask, Task } from '../types/task';
 import { TaskDetailsModal } from './TaskDetailsModal';
@@ -67,6 +67,200 @@ const PriorityBadge = ({ priority }: { priority: 'low' | 'medium' | 'high' }) =>
 
 // 그리드 셀 공통 스타일
 const gridCellClass = "px-4 py-3 text-sm border-r border-border last:border-r-0";
+
+// 모바일 태스크 카드 컴포넌트
+const MobileTaskCard = ({ 
+  task, 
+  isExpanded, 
+  hasSubtasks, 
+  onToggle, 
+  onShowDetails, 
+  onAddToQueue, 
+  onDeleteTask,
+  isAddingToQueue 
+}: {
+  task: Task;
+  isExpanded: boolean;
+  hasSubtasks: boolean;
+  onToggle: () => void;
+  onShowDetails: (task: Task) => void;
+  onAddToQueue: (taskId: string) => void;
+  onDeleteTask: (taskId: string, taskTitle: string) => void;
+  isAddingToQueue: string | null;
+}) => (
+  <div className="bg-card border border-border rounded-lg p-4 space-y-3">
+    {/* 헤더 */}
+    <div className="flex items-start justify-between">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        {hasSubtasks && (
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-6 w-6 p-0 shrink-0" 
+            onClick={onToggle}
+          >
+            <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${isExpanded ? 'rotate-0' : '-rotate-90'}`} />
+          </Button>
+        )}
+        <span className="font-mono text-sm text-muted-foreground">#{task.id}</span>
+      </div>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 shrink-0">
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={() => onShowDetails(task)}>
+            View Details
+          </ContextMenuItem>
+          <ContextMenuItem 
+            onClick={() => onDeleteTask(task.id, task.title)}
+            className="text-red-600 focus:text-red-600 focus:bg-red-50"
+          >
+            Remove Task
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    </div>
+
+    {/* 제목과 설명 */}
+    <div className="space-y-2">
+      <h3 className="font-medium text-base leading-tight">{task.title}</h3>
+      {task.description && (
+        <p className="text-sm text-muted-foreground line-clamp-2">{task.description}</p>
+      )}
+    </div>
+
+    {/* 상태와 우선순위 */}
+    <div className="flex items-center gap-2 flex-wrap">
+      <StatusBadge status={task.status} />
+      <PriorityBadge priority={task.priority} />
+    </div>
+
+    {/* 의존성 */}
+    {task.dependencies.length > 0 && (
+      <div className="text-xs text-muted-foreground">
+        <span className="font-medium">Dependencies:</span> {task.dependencies.join(', ')}
+      </div>
+    )}
+
+    {/* 노트 */}
+    {task.notes && (
+      <div className="text-xs text-muted-foreground">
+        <span className="font-medium">Notes:</span> {task.notes}
+      </div>
+    )}
+
+    {/* 액션 버튼 */}
+    <div className="flex justify-end pt-2">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => onAddToQueue(task.id)}
+        disabled={isAddingToQueue === task.id}
+        className="h-9 px-4"
+      >
+        {isAddingToQueue === task.id ? (
+          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        ) : (
+          <>
+            <Send className="w-4 h-4 mr-2" />
+            Queue
+          </>
+        )}
+      </Button>
+    </div>
+  </div>
+);
+
+// 모바일 서브태스크 카드 컴포넌트
+const MobileSubTaskCard = ({ 
+  subtask, 
+  onShowDetails, 
+  onAddToQueue, 
+  onDeleteSubtask,
+  isAddingToQueue 
+}: {
+  subtask: SubTask;
+  onShowDetails: (task: SubTask) => void;
+  onAddToQueue: (taskId: string) => void;
+  onDeleteSubtask: (subtaskId: string, subtaskTitle: string) => void;
+  isAddingToQueue: string | null;
+}) => (
+  <div className="bg-muted/30 border border-border/50 rounded-lg p-3 ml-4 space-y-3">
+    {/* 헤더 */}
+    <div className="flex items-start justify-between">
+      <span className="font-mono text-sm text-muted-foreground">#{subtask.id}</span>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 shrink-0">
+            <MoreVertical className="h-3 w-3" />
+          </Button>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={() => onShowDetails(subtask)}>
+            View Details
+          </ContextMenuItem>
+          <ContextMenuItem 
+            onClick={() => onDeleteSubtask(subtask.id, subtask.title)}
+            className="text-red-600 focus:text-red-600 focus:bg-red-50"
+          >
+            Remove Task
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    </div>
+
+    {/* 제목과 설명 */}
+    <div className="space-y-1">
+      <h4 className="font-medium text-sm leading-tight">{subtask.title}</h4>
+      {subtask.description && (
+        <p className="text-xs text-muted-foreground line-clamp-2">{subtask.description}</p>
+      )}
+    </div>
+
+    {/* 상태와 우선순위 */}
+    <div className="flex items-center gap-2 flex-wrap">
+      <StatusBadge status={subtask.status} />
+      <PriorityBadge priority={subtask.priority} />
+    </div>
+
+    {/* 의존성 */}
+    {subtask.dependencies.length > 0 && (
+      <div className="text-xs text-muted-foreground">
+        <span className="font-medium">Dependencies:</span> {subtask.dependencies.join(', ')}
+      </div>
+    )}
+
+    {/* 노트 */}
+    {subtask.notes && (
+      <div className="text-xs text-muted-foreground">
+        <span className="font-medium">Notes:</span> {subtask.notes}
+      </div>
+    )}
+
+    {/* 액션 버튼 */}
+    <div className="flex justify-end pt-1">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => onAddToQueue(subtask.id)}
+        disabled={isAddingToQueue === subtask.id}
+        className="h-8 px-3 text-xs"
+      >
+        {isAddingToQueue === subtask.id ? (
+          <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        ) : (
+          <>
+            <Send className="w-3 h-3 mr-1" />
+            Queue
+          </>
+        )}
+      </Button>
+    </div>
+  </div>
+);
 
 // 서브태스크 행 컴포넌트
 const SubTaskRow = ({ 
@@ -346,145 +540,207 @@ export const TaskTable = ({ tasks, isLoading = false, onTaskDeleted }: TaskTable
 
   return (
     <>
-      <div className="flex-1 overflow-auto border rounded-lg bg-card">
+      {/* 데스크톱 테이블 레이아웃 */}
+      <div className="hidden md:flex md:flex-1 overflow-auto border rounded-lg bg-card">
         {/* 헤더 */}
-        <div className="grid grid-cols-7 bg-muted/50 border-b border-border">
-          <div className={`${gridCellClass} font-semibold`}>ID</div>
-          <div className={`${gridCellClass} font-semibold`}>Title</div>
-          <div className={`${gridCellClass} font-semibold text-center`}>Status</div>
-          <div className={`${gridCellClass} font-semibold text-center`}>Priority</div>
-          <div className={`${gridCellClass} font-semibold text-center`}>Dependencies</div>
-          <div className={`${gridCellClass} font-semibold text-center`}>Notes</div>
-          <div className={`${gridCellClass} font-semibold text-center`}>Actions</div>
-        </div>
+        <div className="w-full">
+          <div className="grid grid-cols-7 bg-muted/50 border-b border-border">
+            <div className={`${gridCellClass} font-semibold`}>ID</div>
+            <div className={`${gridCellClass} font-semibold`}>Title</div>
+            <div className={`${gridCellClass} font-semibold text-center`}>Status</div>
+            <div className={`${gridCellClass} font-semibold text-center`}>Priority</div>
+            <div className={`${gridCellClass} font-semibold text-center`}>Dependencies</div>
+            <div className={`${gridCellClass} font-semibold text-center`}>Notes</div>
+            <div className={`${gridCellClass} font-semibold text-center`}>Actions</div>
+          </div>
 
-        {/* 바디 */}
-        <div>
-          {isLoading ? (
-              <div className="flex flex-col items-center justify-center py-16 space-y-4">
-                <CircularProgress value={0} size={64} showValue={false} />
-                <p className="text-sm text-muted-foreground">프로젝트 경로 변경 중...</p>
+          {/* 바디 */}
+          <div>
+            {isLoading ? (
+                <div className="flex flex-col items-center justify-center py-16 space-y-4">
+                  <CircularProgress value={0} size={64} showValue={false} />
+                  <p className="text-sm text-muted-foreground">프로젝트 경로 변경 중...</p>
+                </div>
+            ) : tasks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 space-y-2">
+                <p className="text-sm text-muted-foreground">작업이 없습니다.</p>
               </div>
-          ) : tasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 space-y-2">
-              <p className="text-sm text-muted-foreground">작업이 없습니다.</p>
-            </div>
-          ) : (
-            tasks.map((task) => {
-            const isExpanded = expandedTasks.has(task.id);
-            const hasSubtasks = task.subtasks && task.subtasks.length > 0;
+            ) : (
+              tasks.map((task) => {
+              const isExpanded = expandedTasks.has(task.id);
+              const hasSubtasks = task.subtasks && task.subtasks.length > 0;
 
-            return (
-              <Collapsible key={task.id} open={isExpanded}>
-                {/* 메인 태스크 행 */}
-                <ContextMenu>
-                  <ContextMenuTrigger asChild>
-                    <div 
-                      className={`grid grid-cols-7 border-b border-border ${
-                        hasSubtasks 
-                          ? 'cursor-pointer hover:bg-muted/30' 
-                          : 'hover:bg-muted/20'
-                      } transition-colors`}
-                      onClick={() => hasSubtasks && toggleTask(task.id)}
-                    >
-                      <div className={`${gridCellClass} font-mono`}>
-                        <div className="flex items-center gap-2">
-                          {hasSubtasks ? (
-                            <Button variant="ghost" size="sm" className="h-4 w-4 p-0 hover:bg-muted/80">
-                              <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-0' : '-rotate-90'}`}>
-                                <ChevronDown className="h-3 w-3" />
-                              </div>
-                            </Button>
-                          ) : (
-                            <div className="w-4 h-4" />
-                          )}
-                          {task.id}
+              return (
+                <Collapsible key={task.id} open={isExpanded}>
+                  {/* 메인 태스크 행 */}
+                  <ContextMenu>
+                    <ContextMenuTrigger asChild>
+                      <div 
+                        className={`grid grid-cols-7 border-b border-border ${
+                          hasSubtasks 
+                            ? 'cursor-pointer hover:bg-muted/30' 
+                            : 'hover:bg-muted/20'
+                        } transition-colors`}
+                        onClick={() => hasSubtasks && toggleTask(task.id)}
+                      >
+                        <div className={`${gridCellClass} font-mono`}>
+                          <div className="flex items-center gap-2">
+                            {hasSubtasks ? (
+                              <Button variant="ghost" size="sm" className="h-4 w-4 p-0 hover:bg-muted/80">
+                                <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-0' : '-rotate-90'}`}>
+                                  <ChevronDown className="h-3 w-3" />
+                                </div>
+                              </Button>
+                            ) : (
+                              <div className="w-4 h-4" />
+                            )}
+                            {task.id}
+                          </div>
                         </div>
-                      </div>
-                      <div className={gridCellClass}>
-                        <div className="space-y-1">
-                          <p className="font-medium">{task.title}</p>
-                          <p className="text-xs text-muted-foreground line-clamp-2">
-                            {task.description}
+                        <div className={gridCellClass}>
+                          <div className="space-y-1">
+                            <p className="font-medium">{task.title}</p>
+                            <p className="text-xs text-muted-foreground line-clamp-2">
+                              {task.description}
+                            </p>
+                          </div>
+                        </div>
+                        <div className={`${gridCellClass} flex justify-center items-center`}>
+                          <StatusBadge status={task.status} />
+                        </div>
+                        <div className={`${gridCellClass} flex justify-center items-center`}>
+                          <PriorityBadge priority={task.priority} />
+                        </div>
+                        <div className={`${gridCellClass} font-mono text-xs text-center`}>
+                          {task.dependencies.length > 0 ? task.dependencies.join(', ') : '-'}
+                        </div>
+                        <div className={gridCellClass}>
+                          <p className="text-xs text-muted-foreground break-words">
+                            {task.notes || 'None'}
                           </p>
                         </div>
-                      </div>
-                      <div className={`${gridCellClass} flex justify-center items-center`}>
-                        <StatusBadge status={task.status} />
-                      </div>
-                      <div className={`${gridCellClass} flex justify-center items-center`}>
-                        <PriorityBadge priority={task.priority} />
-                      </div>
-                      <div className={`${gridCellClass} font-mono text-xs text-center`}>
-                        {task.dependencies.length > 0 ? task.dependencies.join(', ') : '-'}
-                      </div>
-                      <div className={gridCellClass}>
-                        <p className="text-xs text-muted-foreground break-words">
-                          {task.notes || 'None'}
-                        </p>
-                      </div>
-                      <div className={`${gridCellClass} flex justify-center items-center`}>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            addTaskToQueue(task.id);
-                          }}
-                          disabled={isAddingToQueue === task.id}
-                          className="h-8 px-2 text-xs"
-                        >
-                          {isAddingToQueue === task.id ? (
-                            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                          ) : (
-                            <>
-                              <Send className="w-3 h-3 mr-1" />
-                              Queue
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent>
-                    <ContextMenuItem onClick={() => showTaskDetails(task)}>
-                      View Details
-                    </ContextMenuItem>
-                    <ContextMenuItem 
-                      onClick={() => deleteTask(task.id, task.title)}
-                      className="text-red-600 focus:text-red-600 focus:bg-red-50"
-                    >
-                      Remove Task
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
-                
-                {/* 서브태스크가 있을 경우 렌더링 */}
-                {hasSubtasks && (
-                  <CollapsibleContent className="data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up overflow-hidden">
-                    <div className={`data-[state=closed]:opacity-0 data-[state=open]:opacity-100 transition-opacity duration-100`}>
-                      {task.subtasks!.map((subtask, index) => (
-                        <div 
-                          key={subtask.id} 
-                          className={`${isExpanded ? 'animate-in fade-in-0 slide-in-from-top-1 duration-300' : ''}`}
-                          style={{ animationDelay: isExpanded ? `${index * 50}ms` : '0ms' }}
-                        >
-                          <SubTaskRow 
-                            subtask={subtask} 
-                            onShowDetails={showTaskDetails}
-                            onAddToQueue={addTaskToQueue}
-                            onDeleteSubtask={deleteSubtask}
-                            isAddingToQueue={isAddingToQueue}
-                          />
+                        <div className={`${gridCellClass} flex justify-center items-center`}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              addTaskToQueue(task.id);
+                            }}
+                            disabled={isAddingToQueue === task.id}
+                            className="h-8 px-2 text-xs"
+                          >
+                            {isAddingToQueue === task.id ? (
+                              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <>
+                                <Send className="w-3 h-3 mr-1" />
+                                Queue
+                              </>
+                            )}
+                          </Button>
                         </div>
-                      ))}
-                    </div>
-                  </CollapsibleContent>
-                )}
-              </Collapsible>
-            );
-          }))}
+                      </div>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                      <ContextMenuItem onClick={() => showTaskDetails(task)}>
+                        View Details
+                      </ContextMenuItem>
+                      <ContextMenuItem 
+                        onClick={() => deleteTask(task.id, task.title)}
+                        className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                      >
+                        Remove Task
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
+                  
+                  {/* 서브태스크가 있을 경우 렌더링 */}
+                  {hasSubtasks && (
+                    <CollapsibleContent className="data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up overflow-hidden">
+                      <div className={`data-[state=closed]:opacity-0 data-[state=open]:opacity-100 transition-opacity duration-100`}>
+                        {task.subtasks!.map((subtask, index) => (
+                          <div 
+                            key={subtask.id} 
+                            className={`${isExpanded ? 'animate-in fade-in-0 slide-in-from-top-1 duration-300' : ''}`}
+                            style={{ animationDelay: isExpanded ? `${index * 50}ms` : '0ms' }}
+                          >
+                            <SubTaskRow 
+                              subtask={subtask} 
+                              onShowDetails={showTaskDetails}
+                              onAddToQueue={addTaskToQueue}
+                              onDeleteSubtask={deleteSubtask}
+                              isAddingToQueue={isAddingToQueue}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </CollapsibleContent>
+                  )}
+                </Collapsible>
+              );
+            }))}
+          </div>
         </div>
+      </div>
+
+      {/* 모바일 카드 레이아웃 */}
+      <div className="md:hidden flex-1 overflow-auto">
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-16 space-y-4">
+            <CircularProgress value={0} size={64} showValue={false} />
+            <p className="text-sm text-muted-foreground">프로젝트 경로 변경 중...</p>
+          </div>
+        ) : tasks.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 space-y-2">
+            <p className="text-sm text-muted-foreground">작업이 없습니다.</p>
+          </div>
+        ) : (
+          <div className="space-y-4 p-4">
+            {tasks.map((task) => {
+              const isExpanded = expandedTasks.has(task.id);
+              const hasSubtasks = task.subtasks && task.subtasks.length > 0;
+
+              return (
+                <Collapsible key={task.id} open={isExpanded}>
+                  <MobileTaskCard
+                    task={task}
+                    isExpanded={isExpanded}
+                    hasSubtasks={hasSubtasks}
+                    onToggle={() => toggleTask(task.id)}
+                    onShowDetails={showTaskDetails}
+                    onAddToQueue={addTaskToQueue}
+                    onDeleteTask={deleteTask}
+                    isAddingToQueue={isAddingToQueue}
+                  />
+                  
+                  {/* 서브태스크가 있을 경우 렌더링 */}
+                  {hasSubtasks && (
+                    <CollapsibleContent className="data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up overflow-hidden">
+                      <div className="space-y-3 mt-3">
+                        {task.subtasks!.map((subtask, index) => (
+                          <div 
+                            key={subtask.id} 
+                            className={`${isExpanded ? 'animate-in fade-in-0 slide-in-from-top-1 duration-300' : ''}`}
+                            style={{ animationDelay: isExpanded ? `${index * 50}ms` : '0ms' }}
+                          >
+                            <MobileSubTaskCard
+                              subtask={subtask}
+                              onShowDetails={showTaskDetails}
+                              onAddToQueue={addTaskToQueue}
+                              onDeleteSubtask={deleteSubtask}
+                              isAddingToQueue={isAddingToQueue}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </CollapsibleContent>
+                  )}
+                </Collapsible>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 상세보기 모달 */}

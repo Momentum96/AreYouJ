@@ -193,42 +193,44 @@ function App() {
       <div className="dark w-full h-screen bg-background text-foreground overflow-hidden">
       {/* Navigation Bar */}
       <div className="w-full border-b border-border bg-card">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center space-x-8">
-            <h1 className="text-2xl font-bold text-primary">
+        <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4">
+          <div className="flex items-center space-x-4 md:space-x-8 min-w-0 flex-1">
+            <h1 className="text-lg md:text-2xl font-bold text-primary truncate">
               {formatAppName(__APP_NAME__)}
             </h1>
             <nav className="flex space-x-1">
               <button
                 onClick={() => setActiveTab('dashboard')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-2 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${
                   activeTab === 'dashboard'
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
-                📊 Dashboard
+                <span className="md:hidden">📊</span>
+                <span className="hidden md:inline">📊 Dashboard</span>
               </button>
               <button
                 onClick={() => setActiveTab('automation')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-2 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${
                   activeTab === 'automation'
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
-                🤖 Automation
+                <span className="md:hidden">🤖</span>
+                <span className="hidden md:inline">🤖 Automation</span>
               </button>
             </nav>
           </div>
-          <div className="flex items-center">
+          <div className="flex items-center shrink-0">
             <ProjectHomePathSetting />
           </div>
         </div>
       </div>
 
       {/* Content Area */}
-      <div className="w-full h-[calc(100vh-73px)] overflow-hidden">
+      <div className="w-full h-[calc(100vh-61px)] md:h-[calc(100vh-73px)] overflow-hidden">
         {activeTab === 'dashboard' ? (
           <ErrorBoundary fallback={
             <div className="flex items-center justify-center h-full">

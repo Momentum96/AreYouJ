@@ -30,7 +30,7 @@ export const Dashboard = ({ tasks, appName, isLoadingTasks = false, onTaskDelete
   const overallStats = useTaskStats(tasks);
 
   return (
-    <div className="w-full h-full flex flex-col p-6 gap-4">
+    <div className="w-full h-full flex flex-col p-4 md:p-6 gap-4">
       <StatsHeader stats={overallStats} tasks={tasks} appName={appName} />
       
       {/* Error Message for tasks.db not found */}

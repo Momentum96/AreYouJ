@@ -39,9 +39,39 @@ async function findAvailablePort(startPort) {
   throw new Error(`No available ports found starting from ${startPort}`);
 }
 
-// Middleware
+// Middleware - CORS 설정을 모든 로컬 네트워크 IP에서 허용하도록 수정
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174'],
+  origin: function (origin, callback) {
+    // 개발 환경에서는 모든 origin 허용
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+    
+    // 프로덕션에서는 특정 origin만 허용
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'http://localhost:5174',
+      /^http:\/\/192\.168\.\d+\.\d+:(5173|5174)$/,  // 로컬 네트워크 IP 허용
+      /^http:\/\/10\.\d+\.\d+\.\d+:(5173|5174)$/,   // 다른 사설 IP 대역
+      /^http:\/\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+:(5173|5174)$/ // 172.16-31.x.x 대역
+    ];
+    
+    if (!origin) return callback(null, true); // 모바일 앱 등에서 origin이 없는 경우
+    
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      if (typeof allowedOrigin === 'string') {
+        return origin === allowedOrigin;
+      } else {
+        return allowedOrigin.test(origin);
+      }
+    });
+    
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS policy violation'));
+    }
+  },
   credentials: true
 }));
 
@@ -88,16 +118,19 @@ async function startServer() {
       }
     });
     
-    server.listen(PORT, () => {
+    server.listen(PORT, '0.0.0.0', () => {
       console.log('🚀 AreYouJ Backend Server');
       console.log(`📡 HTTP Server: http://localhost:${PORT}`);
+      console.log(`📡 Network Access: http://0.0.0.0:${PORT}`);
       console.log(`🔌 WebSocket Server: ws://localhost:${PORT}`);
+      console.log(`🔌 Network WebSocket: ws://0.0.0.0:${PORT}`);
       console.log('');
       console.log('🔧 Available endpoints:');
       console.log(`   GET  http://localhost:${PORT}/health`);
       console.log(`   GET  http://localhost:${PORT}/api/status`);
       console.log(`   POST http://localhost:${PORT}/api/queue/add`);
       console.log('');
+      console.log('🌐 Network access enabled for mobile devices');
       console.log('🛑 Press Ctrl+C to stop the server');
     });
     

@@ -24,5 +24,8 @@ dist-ssr
 *.sw?
 
 server/data/
-docs/
 .claude
+docs/.obsidian/
+docs/.makemd/
+docs/.space/
+docs/.trash/

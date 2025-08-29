@@ -1,6 +1,7 @@
 import sqlite3 from 'sqlite3';
 import path from 'path';
 import fs from 'fs';
+import chokidar from 'chokidar';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
@@ -13,6 +14,9 @@ class SQLiteManager {
     this.connectionTimeout = null;
     this.lastActivity = null;
     this.IDLE_TIMEOUT = 30 * 60 * 1000; // 30 minutes idle timeout
+    this.fileWatcher = null;
+    this.lastFileStats = null;
+    this.isFileChanged = false;
     this._setupProcessHandlers();
   }
 
@@ -38,6 +42,133 @@ class SQLiteManager {
       console.error('❌ Uncaught Exception:', error);
       gracefulShutdown('uncaughtException');
     });
+  }
+
+  /**
+   * Setup file system watcher for database file
+   * @private
+   */
+  _setupFileWatcher() {
+    // Close existing watcher
+    if (this.fileWatcher) {
+      this.fileWatcher.close();
+      this.fileWatcher = null;
+    }
+
+    if (!this.dbPath || !fs.existsSync(this.dbPath)) {
+      return;
+    }
+
+    console.log(`📁 Setting up file watcher for: ${this.dbPath}`);
+    
+    this.fileWatcher = chokidar.watch(this.dbPath, {
+      ignoreInitial: true,
+      persistent: true,
+      usePolling: false, // Use native file system events
+      awaitWriteFinish: {
+        stabilityThreshold: 100, // Wait 100ms for write to stabilize
+        pollInterval: 50
+      }
+    });
+
+    this.fileWatcher.on('change', () => {
+      console.log('📁 Database file changed, marking for reconnect');
+      this.isFileChanged = true;
+      this.lastFileStats = null; // Reset stats to force recheck
+    });
+
+    this.fileWatcher.on('unlink', () => {
+      console.log('📁 Database file deleted');
+      this.connectionState = 'disconnected';
+      this.isFileChanged = true;
+    });
+
+    this.fileWatcher.on('add', () => {
+      console.log('📁 Database file created/restored');
+      this.isFileChanged = true;
+      this.lastFileStats = null;
+    });
+
+    this.fileWatcher.on('error', (error) => {
+      console.error('📁 File watcher error:', error);
+      // Don't change connection state on watcher errors
+    });
+  }
+
+  /**
+   * Check if connection is healthy by running a simple query
+   * @private
+   * @returns {Promise<boolean>}
+   */
+  async _isConnectionHealthy() {
+    if (!this.db || this.connectionState !== 'connected') {
+      return false;
+    }
+
+    try {
+      await new Promise((resolve, reject) => {
+        this.db.get('SELECT 1 as test', (err, row) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(row);
+          }
+        });
+      });
+      return true;
+    } catch (error) {
+      console.log('📁 Connection health check failed:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Check if database file has changed based on stats
+   * @private
+   * @returns {boolean}
+   */
+  _hasFileChanged() {
+    if (this.isFileChanged) {
+      this.isFileChanged = false; // Reset flag
+      return true;
+    }
+
+    if (!this.dbPath || !fs.existsSync(this.dbPath)) {
+      return true;
+    }
+
+    try {
+      const currentStats = fs.statSync(this.dbPath);
+      
+      if (!this.lastFileStats) {
+        this.lastFileStats = {
+          mtime: currentStats.mtime.getTime(),
+          size: currentStats.size,
+          ino: currentStats.ino
+        };
+        return false;
+      }
+
+      const changed = 
+        this.lastFileStats.mtime !== currentStats.mtime.getTime() ||
+        this.lastFileStats.size !== currentStats.size ||
+        this.lastFileStats.ino !== currentStats.ino;
+
+      if (changed) {
+        console.log('📁 Database file stats changed');
+        this.lastFileStats = {
+          mtime: currentStats.mtime.getTime(),
+          size: currentStats.size,
+          ino: currentStats.ino
+        };
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.warn('📁 Error checking file stats:', error);
+      return true; // Assume changed if we can't check
+    }
   }
 
   /**
@@ -92,6 +223,7 @@ class SQLiteManager {
             this.connectionState = 'connected';
             this.lastActivity = Date.now();
             this._startIdleTimer();
+            this._setupFileWatcher(); // Setup file watcher
             this._resolvePendingRequests();
             resolve(true);
           } catch (schemaError) {
@@ -610,14 +742,34 @@ class SQLiteManager {
   /**
    * Atomically switch database connection to new project path
    * @param {string} newProjectHomePath - New project home path
+   * @param {boolean} forceReconnect - Force reconnection even if path is the same
    * @returns {Promise<boolean>} - Success status
    */
-  async switchDatabase(newProjectHomePath) {
+  async switchDatabase(newProjectHomePath, forceReconnect = false) {
     const newDbPath = path.join(newProjectHomePath, 'docs', 'tasks.db');
     
-    // If already connected to the same path, no need to switch
-    if (this.connectionState === 'connected' && this.dbPath === newDbPath) {
-      console.log('📁 Already connected to target database path');
+    // Determine if reconnection is needed
+    let needsReconnect = forceReconnect;
+    
+    if (!needsReconnect && this.connectionState === 'connected' && this.dbPath === newDbPath) {
+      // For the same database path, check if file changed or connection is unhealthy
+      const fileChanged = this._hasFileChanged();
+      const connectionHealthy = await this._isConnectionHealthy();
+      
+      if (!connectionHealthy) {
+        console.log('📁 Connection health check failed, reconnection needed');
+        needsReconnect = true;
+      } else if (fileChanged) {
+        console.log('📁 Database file changed, reconnection needed');
+        needsReconnect = true;
+      }
+    } else if (this.dbPath !== newDbPath) {
+      // Different database path, always reconnect
+      needsReconnect = true;
+    }
+    
+    if (this.connectionState === 'connected' && this.dbPath === newDbPath && !needsReconnect) {
+      // Connection is healthy and file hasn't changed
       return true;
     }
 
@@ -654,6 +806,7 @@ class SQLiteManager {
       this.connectionState = 'connected';
       this.lastActivity = Date.now();
       this._startIdleTimer();
+      this._setupFileWatcher(); // Setup file watcher for new database
 
       // Close old connection (if exists)
       if (oldDb) {
@@ -695,6 +848,12 @@ class SQLiteManager {
     if (this.connectionTimeout) {
       clearTimeout(this.connectionTimeout);
       this.connectionTimeout = null;
+    }
+
+    // Close file watcher
+    if (this.fileWatcher) {
+      this.fileWatcher.close();
+      this.fileWatcher = null;
     }
 
     return new Promise((resolve, reject) => {

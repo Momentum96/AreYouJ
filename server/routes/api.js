@@ -1114,9 +1114,12 @@ router.get('/tasks', async (req, res) => {
       });
     }
 
-    // Initialize SQLite manager if needed
+    // Initialize SQLite manager if needed or force reconnect if file changed
     if (!sqliteManager.getDB()) {
       await sqliteManager.initDB(projectHomePath);
+    } else {
+      // Always try to switch database to detect file changes
+      await sqliteManager.switchDatabase(projectHomePath);
     }
 
     // Parse pagination parameters
@@ -1178,9 +1181,12 @@ router.delete('/tasks/:id', async (req, res) => {
       });
     }
 
-    // Initialize SQLite manager if needed
+    // Initialize SQLite manager if needed or force reconnect if file changed
     if (!sqliteManager.getDB()) {
       await sqliteManager.initDB(projectHomePath);
+    } else {
+      // Always try to switch database to detect file changes
+      await sqliteManager.switchDatabase(projectHomePath);
     }
 
     // Delete task from SQLite database
@@ -1229,9 +1235,12 @@ router.delete('/tasks/:taskId/subtasks/:subtaskId', async (req, res) => {
       });
     }
 
-    // Initialize SQLite manager if needed
+    // Initialize SQLite manager if needed or force reconnect if file changed
     if (!sqliteManager.getDB()) {
       await sqliteManager.initDB(projectHomePath);
+    } else {
+      // Always try to switch database to detect file changes
+      await sqliteManager.switchDatabase(projectHomePath);
     }
 
     // Delete subtask from SQLite database

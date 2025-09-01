@@ -17,6 +17,8 @@ class SQLiteManager {
     this.fileWatcher = null;
     this.lastFileStats = null;
     this.isFileChanged = false;
+    this.fileChangeDebounceTimer = null;
+    this.FILE_CHANGE_DEBOUNCE = 200; // 200ms debounce for file changes
     this._setupProcessHandlers();
   }
 
@@ -49,10 +51,20 @@ class SQLiteManager {
    * @private
    */
   _setupFileWatcher() {
-    // Close existing watcher
+    // Close existing watcher safely
     if (this.fileWatcher) {
-      this.fileWatcher.close();
+      try {
+        this.fileWatcher.close();
+      } catch (error) {
+        console.warn('⚠️ Error closing file watcher:', error.message);
+      }
       this.fileWatcher = null;
+    }
+    
+    // Clear any pending debounce timer
+    if (this.fileChangeDebounceTimer) {
+      clearTimeout(this.fileChangeDebounceTimer);
+      this.fileChangeDebounceTimer = null;
     }
 
     if (!this.dbPath || !fs.existsSync(this.dbPath)) {
@@ -72,9 +84,17 @@ class SQLiteManager {
     });
 
     this.fileWatcher.on('change', () => {
-      console.log('📁 Database file changed, marking for reconnect');
-      this.isFileChanged = true;
-      this.lastFileStats = null; // Reset stats to force recheck
+      // Debounce file change events to prevent rapid reconnections
+      if (this.fileChangeDebounceTimer) {
+        clearTimeout(this.fileChangeDebounceTimer);
+      }
+      
+      this.fileChangeDebounceTimer = setTimeout(() => {
+        console.log('📁 Database file changed, marking for reconnect');
+        this.isFileChanged = true;
+        this.lastFileStats = null; // Reset stats to force recheck
+        this.fileChangeDebounceTimer = null;
+      }, this.FILE_CHANGE_DEBOUNCE);
     });
 
     this.fileWatcher.on('unlink', () => {
@@ -849,10 +869,20 @@ class SQLiteManager {
       clearTimeout(this.connectionTimeout);
       this.connectionTimeout = null;
     }
+    
+    // Clear file change debounce timer
+    if (this.fileChangeDebounceTimer) {
+      clearTimeout(this.fileChangeDebounceTimer);
+      this.fileChangeDebounceTimer = null;
+    }
 
-    // Close file watcher
+    // Close file watcher safely
     if (this.fileWatcher) {
-      this.fileWatcher.close();
+      try {
+        this.fileWatcher.close();
+      } catch (error) {
+        console.warn('⚠️ Error closing file watcher during shutdown:', error.message);
+      }
       this.fileWatcher = null;
     }
 
